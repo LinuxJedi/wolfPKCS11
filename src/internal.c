@@ -154,6 +154,12 @@ typedef struct WP11_Data {
     word32 len;                        /* Length of key data in bytes         */
 } WP11_Data;
 
+/* Data object */
+typedef struct WP11_RawData {
+    byte* data;
+    word32 len;
+} WP11_RawData;
+
 /* Certificate */
 typedef struct WP11_Cert {
     byte *data;                        /* Certificate data                    */
@@ -182,6 +188,7 @@ struct WP11_Object {
     #endif
         WP11_Data symmKey;             /* Symmetric key object                */
         WP11_Cert cert;                /* Certificate object                  */
+        WP11_RawData data;             /* Data object */
     } data;
 #ifdef WOLFPKCS11_TPM
     WOLFTPM2_KEYBLOB tpmKey;
@@ -5002,18 +5009,23 @@ static int wp11_hash_type(CK_MECHANISM_TYPE hashMech,
 
     switch (hashMech) {
         case CKM_SHA1:
+        case CKM_SHA1_HMAC:
             *hashType = WC_HASH_TYPE_SHA;
             break;
         case CKM_SHA224:
+        case CKM_SHA224_HMAC:
             *hashType = WC_HASH_TYPE_SHA224;
             break;
         case CKM_SHA256:
+        case CKM_SHA256_HMAC:
             *hashType = WC_HASH_TYPE_SHA256;
             break;
         case CKM_SHA384:
+        case CKM_SHA384_HMAC:
             *hashType = WC_HASH_TYPE_SHA384;
             break;
         case CKM_SHA512:
+        case CKM_SHA512_HMAC:
             *hashType = WC_HASH_TYPE_SHA512;
             break;
         case CKM_SHA3_224:
@@ -6051,6 +6063,34 @@ int WP11_Object_SetSecretKey(WP11_Object* object, unsigned char** data,
     return ret;
 }
 
+int WP11_Object_SetData(WP11_Object* object, unsigned char* data, CK_ULONG len)
+{
+    int ret = 0;
+    WP11_RawData *rData;
+
+    if ((len == 0) || (data == NULL))
+        return BAD_FUNC_ARG;
+
+    if (object->onToken)
+        WP11_Lock_LockRW(object->lock);
+
+    rData = &object->data.data;
+
+    rData->data = (byte*)XMALLOC(len, NULL, DYNAMIC_TYPE_CERT);
+    if (rData->data == NULL) {
+        ret = MEMORY_E;
+    }
+
+    if (ret == 0) {
+        XMEMCPY(rData->data, data, len);
+        rData->len = len;
+    }
+
+    if (object->onToken)
+        WP11_Lock_UnlockRW(object->lock);
+    return ret;
+}
+
 int WP11_Object_SetCert(WP11_Object* object, unsigned char** data,
                         CK_ULONG* len)
 {
@@ -6764,6 +6804,9 @@ int WP11_Object_GetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
         #ifndef NO_AES
                         case CKK_AES:
         #endif
+        #ifdef HAVE_HKDF
+                        case CKK_HKDF:
+        #endif
                         case CKK_GENERIC_SECRET:
                             ret = SecretObject_GetAttr(object, type, data, len);
                             break;
@@ -7043,6 +7086,9 @@ int WP11_Object_SetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
 #ifndef NO_AES
                 case CKK_AES:
 #endif
+#ifdef HAVE_HKDF
+                case CKK_HKDF:
+#endif
                 case CKK_GENERIC_SECRET:
                     break;
                 default:
@@ -7063,6 +7109,9 @@ int WP11_Object_SetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
 #endif
 #ifndef NO_AES
                 case CKK_AES:
+#endif
+#ifdef HAVE_HKDF
+                case CKK_HKDF:
 #endif
                 case CKK_GENERIC_SECRET:
                    break;
@@ -8158,7 +8207,7 @@ int WP11_EC_Derive(unsigned char* point, word32 pointLen, unsigned char* key,
 
     ret = wc_ecc_init_ex(&pubKey, NULL, priv->slot->devId);
     if (ret == 0) {
-        ret = wc_ecc_import_x963(point, pointLen, &pubKey);
+        ret = wc_ecc_import_x963_ex(point, pointLen, &pubKey, priv->data.ecKey.dp->id);
     }
 #if defined(ECC_TIMING_RESISTANT) && (!defined(HAVE_FIPS) || \
     (defined(HAVE_FIPS_VERSION) && (HAVE_FIPS_VERSION > 2)))
@@ -8184,6 +8233,84 @@ int WP11_EC_Derive(unsigned char* point, word32 pointLen, unsigned char* key,
     return ret;
 }
 #endif /* HAVE_ECC */
+
+#ifdef HAVE_HKDF
+
+/**
+ * Derive the secret from the private key with HKDF.
+ *
+ * @param  params     [in]  The salt and info parameters.
+ * @param  key        [in]  Buffer to hold the secret key.
+ * @param  keyLen     [in]  Buffer length in bytes.
+ * @param  priv       [in]  The private key.
+ * @return  -ve when derivation fails.
+ *          0 on success
+ */
+
+ int WP11_KDF_Derive(WP11_Session* session, CK_HKDF_PARAMS_PTR params,
+    unsigned char* key, word32* keyLen, WP11_Object* priv)
+{
+     int ret = 0;
+     byte* salt = NULL;
+     unsigned long saltLen = 0;
+     WP11_Object* saltKey = NULL;
+     enum wc_HashType hashType;
+     word32 hashLen;
+
+     ret = wp11_hash_type(params->prfHashMechanism, &hashType);
+
+     if (ret != 0) {
+         return CKR_MECHANISM_PARAM_INVALID;
+     }
+
+     hashLen = wc_HashGetDigestSize(hashType);
+
+     if (params->bExtract) {
+         switch (params->ulSaltType) {
+             case CKF_HKDF_SALT_NULL:
+                 break;
+
+             case CKF_HKDF_SALT_DATA:
+                 salt = params->pSalt;
+                 saltLen = params->ulSaltLen;
+                 break;
+
+             case CKF_HKDF_SALT_KEY:
+                 ret = WP11_Object_Find(session, params->hSaltKey, &saltKey, 1);
+                 if (ret != 0)
+                     return CKR_OBJECT_HANDLE_INVALID;
+                 salt = saltKey->data.symmKey.data;
+                 saltLen = saltKey->data.symmKey.len;
+                 break;
+
+             default:
+                 return CKR_MECHANISM_PARAM_INVALID;
+                 break;
+         }
+     }
+
+     if (params->bExtract && !params->bExpand) {
+         ret = wc_HKDF_Extract(hashType, salt, saltLen, priv->data.symmKey.data,
+             priv->data.symmKey.len, key);
+
+         if (!ret)
+             *keyLen = hashLen;
+     }
+     else if (!params->bExtract && params->bExpand) {
+         ret = wc_HKDF_Expand(hashType, priv->data.symmKey.data,
+             priv->data.symmKey.len, params->pInfo, params->ulInfoLen, key,
+             *keyLen);
+     }
+     else {
+         /* Both */
+         ret = wc_HKDF(hashType, priv->data.symmKey.data, priv->data.symmKey.len,
+             salt, saltLen, params->pInfo, params->ulInfoLen, key, *keyLen);
+     }
+
+
+     return ret;
+ }
+#endif
 
 #ifndef NO_DH
 /**
