@@ -366,6 +366,9 @@ int WP11_Dh_GenerateKeyPair(WP11_Object* pub, WP11_Object* priv,
 int WP11_Dh_Derive(unsigned char* pub, word32 pubLen, unsigned char* key,
                    word32* keyLen, WP11_Object* priv);
 
+int WP11_KDF_Derive(WP11_Session* session, CK_HKDF_PARAMS_PTR params,
+                    unsigned char* key, word32 keyLen, WP11_Object* priv);
+
 int WP11_AesGenerateKey(WP11_Object* secret, WP11_Slot* slot);
 
 int WP11_AesCbc_PartLen(WP11_Session* session);

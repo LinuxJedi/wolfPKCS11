@@ -8185,6 +8185,74 @@ int WP11_EC_Derive(unsigned char* point, word32 pointLen, unsigned char* key,
 }
 #endif /* HAVE_ECC */
 
+#ifdef HAVE_HKDF
+
+/**
+ * Derive the secret from the private key with HKDF.
+ *
+ * @param  params     [in]  The salt and info parameters.
+ * @param  key        [in]  Buffer to hold the secret key.
+ * @param  keyLen     [in]  Buffer length in bytes.
+ * @param  priv       [in]  The private key.
+ * @return  -ve when derivation fails.
+ *          0 on success
+ */
+
+/*  CK_BBOOL bExtract;
+    CK_BBOOL bExpand;
+    CK_MECHANISM_TYPE prfHashMechanism;
+    CK_ULONG ulSaltType;
+    CK_BYTE_PTR pSalt;
+    CK_ULONG ulSaltLen;
+    CK_OBJECT_HANDLE hSaltKey;
+    CK_BYTE_PTR pInfo;
+    CK_ULONG ulInfoLen;
+ */
+int WP11_KDF_Derive(WP11_Session* session, CK_HKDF_PARAMS_PTR params,
+                    unsigned char* key, word32 keyLen, WP11_Object* priv)
+{
+    int ret;
+    byte* salt = NULL;
+    unsigned long saltLen = 0;
+    WP11_Object* saltKey = NULL;
+    enum wc_HashType hashType;
+
+    ret = wp11_hash_type(params->prfHashMechanism, &hashType);
+
+    if (ret != 0) {
+        return CKR_MECHANISM_PARAM_INVALID;
+    }
+
+    switch (params->ulSaltType) {
+        case CKF_HKDF_SALT_NULL:
+            break;
+
+        case CKF_HKDF_SALT_DATA:
+            salt = params->pSalt;
+            saltLen = params->ulSaltLen;
+            break;
+
+        case CKF_HKDF_SALT_KEY:
+            ret = WP11_Object_Find(session, params->hSaltKey, &saltKey, 1);
+            if (ret != 0)
+                return CKR_OBJECT_HANDLE_INVALID;
+            salt = saltKey->keyData;
+            saltLen = saltKey->keyDataLen;
+            break;
+
+        default:
+            return CKR_MECHANISM_PARAM_INVALID;
+            break;
+    }
+
+    ret = wc_HKDF(hashType, priv->keyData, priv->keyDataLen, salt, saltLen,
+                  params->pInfo, params->ulInfoLen, key, keyLen);
+
+    return ret;
+}
+
+#endif
+
 #ifndef NO_DH
 /**
  * Generate an DH key pair.
