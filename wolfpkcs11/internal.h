@@ -300,6 +300,8 @@ int WP11_Object_SetSecretKey(WP11_Object* object, unsigned char** data,
                              CK_ULONG* len);
 int WP11_Object_SetCert(WP11_Object* object, unsigned char** data,
                              CK_ULONG* len);
+int WP11_Object_SetData(WP11_Object* object, unsigned char* data,
+                        CK_ULONG len);
 
 int WP11_Object_SetClass(WP11_Object* object, CK_OBJECT_CLASS objClass);
 CK_OBJECT_CLASS WP11_Object_GetClass(WP11_Object* object);
@@ -373,6 +375,9 @@ int WP11_Dh_GenerateKeyPair(WP11_Object* pub, WP11_Object* priv,
                             WP11_Slot* slot);
 int WP11_Dh_Derive(unsigned char* pub, word32 pubLen, unsigned char* key,
                    word32* keyLen, WP11_Object* priv);
+
+int WP11_KDF_Derive(WP11_Session* session, CK_HKDF_PARAMS_PTR params,
+                    unsigned char* key, word32* keyLen, WP11_Object* priv);
 
 int WP11_AesGenerateKey(WP11_Object* secret, WP11_Slot* slot);
 

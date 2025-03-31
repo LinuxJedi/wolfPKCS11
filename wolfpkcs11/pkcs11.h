@@ -135,6 +135,7 @@ extern "C" {
 #define CKK_GENERIC_SECRET                    0x00000010UL
 #define CKK_AES                               0x0000001FUL
 #define CKK_DES3                              0x00000015UL /* not supported */
+#define CKK_HKDF                              0x00000042UL
 
 #define CKA_CLASS                             0x00000000UL
 #define CKA_TOKEN                             0x00000001UL
@@ -253,6 +254,9 @@ extern "C" {
 #define CKM_AES_GCM                           0x00001087UL
 #define CKM_AES_CCM                           0x00001088UL
 #define CKM_AES_CTS                           0x00001089UL
+#define CKM_HKDF_DERIVE                       0x0000402AUL
+#define CKM_HKDF_DATA                         0x0000402BUL
+#define CKM_HKDF_KEY_GEN                      0x0000402CUL
 
 #define CKR_OK                                0x00000000UL
 #define CKR_CANCEL                            0x00000001UL
@@ -357,6 +361,10 @@ extern "C" {
 #define CKC_X_509_ATTR_CERT                   0x00000001UL
 #define CKC_WTLS                              0x00000002UL
 #define CKC_VENDOR_DEFINED                    0x80000000UL
+
+#define CKF_HKDF_SALT_NULL                    0x00000001UL
+#define CKF_HKDF_SALT_DATA                    0x00000002UL
+#define CKF_HKDF_SALT_KEY                     0x00000004UL
 
 typedef unsigned char     CK_BYTE;
 typedef CK_BYTE           CK_CHAR;
@@ -547,6 +555,19 @@ typedef struct CK_ECDH1_DERIVE_PARAMS {
     CK_BYTE_PTR pPublicData;
 } CK_ECDH1_DERIVE_PARAMS;
 typedef CK_ECDH1_DERIVE_PARAMS* CK_ECDH1_DERIVE_PARAMS_PTR;
+
+typedef struct CK_HKDF_PARAMS {
+    CK_BBOOL bExtract;
+    CK_BBOOL bExpand;
+    CK_MECHANISM_TYPE prfHashMechanism;
+    CK_ULONG ulSaltType;
+    CK_BYTE_PTR pSalt;
+    CK_ULONG ulSaltLen;
+    CK_OBJECT_HANDLE hSaltKey;
+    CK_BYTE_PTR pInfo;
+    CK_ULONG ulInfoLen;
+} CK_HKDF_PARAMS;
+typedef CK_HKDF_PARAMS* CK_HKDF_PARAMS_PTR;
 
 typedef struct CK_AES_CTR_PARAMS {
     CK_ULONG ulCounterBits;
