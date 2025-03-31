@@ -2657,7 +2657,7 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
     WP11_Session* session;
     WP11_Object* obj = NULL;
     CK_KEY_TYPE type;
-    int init;
+    int init = 0;
 
     if (!WP11_Library_IsInitialized())
         return CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -2729,6 +2729,21 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
     #endif
 #endif
 #ifdef HAVE_ECC
+#ifndef NO_SHA
+        case CKM_ECDSA_SHA1:
+#endif
+#ifdef WOLFSSL_SHA224
+        case CKM_ECDSA_SHA224:
+#endif
+#ifndef NO_SHA256
+        case CKM_ECDSA_SHA256:
+#endif
+#ifdef WOLFSSL_SHA384
+        case CKM_ECDSA_SHA384:
+#endif
+#ifdef WOLFSSL_SHA512
+        case CKM_ECDSA_SHA512:
+#endif
         case CKM_ECDSA:
             if (type != CKK_EC)
                 return CKR_KEY_TYPE_INCONSISTENT;
@@ -2736,7 +2751,8 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
                                               pMechanism->ulParameterLen != 0) {
                 return CKR_MECHANISM_PARAM_INVALID;
             }
-            init = WP11_INIT_ECDSA_SIGN;
+            init = WP11_INIT_ECDSA_SIGN | ((pMechanism->mechanism - CKM_ECDSA)
+                                                    << WP11_INIT_DIGEST_SHIFT);
             break;
 #endif
 #ifndef NO_HMAC
@@ -2886,8 +2902,31 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
     #endif
 #endif
 #ifdef HAVE_ECC
-        case CKM_ECDSA:
+#ifndef NO_SHA
+        case CKM_ECDSA_SHA1:
+#endif
+#ifdef WOLFSSL_SHA224
+        case CKM_ECDSA_SHA224:
+#endif
+#ifndef NO_SHA256
+        case CKM_ECDSA_SHA256:
+#endif
+#ifdef WOLFSSL_SHA384
+        case CKM_ECDSA_SHA384:
+#endif
+#ifdef WOLFSSL_SHA512
+        case CKM_ECDSA_SHA512:
+#endif
+        case CKM_ECDSA: {
+            byte digest[WC_MAX_DIGEST_SIZE];
+            byte* data = pData;
+            int dataSz = (int)ulDataLen;
+            enum wc_HashType hash_type = WP11_Session_ToHashType(session);
+
             if (!WP11_Session_IsOpInitialized(session, WP11_INIT_ECDSA_SIGN))
+                return CKR_OPERATION_NOT_INITIALIZED;
+            if (!WP11_Session_IsHashOpInitialized(session, mechanism,
+                                                  CKM_ECDSA))
                 return CKR_OPERATION_NOT_INITIALIZED;
 
             sigLen = WP11_Ec_SigLen(obj);
@@ -2898,10 +2937,19 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
             if (sigLen > (word32)*pulSignatureLen)
                 return CKR_BUFFER_TOO_SMALL;
 
-            ret = WP11_Ec_Sign(pData, (int)ulDataLen, pSignature, &sigLen, obj,
+            if (hash_type != WC_HASH_TYPE_NONE) {
+                if (wc_Hash(hash_type, pData, ulDataLen, digest, sizeof(digest))
+                     != 0 || (dataSz = wc_HashGetDigestSize(hash_type)) < 0) {
+                    return CKR_FUNCTION_FAILED;
+                }
+                data = digest;
+            }
+
+            ret = WP11_Ec_Sign(data, (word32)dataSz, pSignature, &sigLen, obj,
                                                  WP11_Session_GetSlot(session));
             *pulSignatureLen = sigLen;
             break;
+        }
 #endif
 #ifndef NO_HMAC
     #ifndef NO_MD5
@@ -3261,6 +3309,21 @@ CK_RV C_VerifyInit(CK_SESSION_HANDLE hSession,
     #endif
 #endif
 #ifdef HAVE_ECC
+#ifndef NO_SHA
+        case CKM_ECDSA_SHA1:
+#endif
+#ifdef WOLFSSL_SHA224
+        case CKM_ECDSA_SHA224:
+#endif
+#ifndef NO_SHA256
+        case CKM_ECDSA_SHA256:
+#endif
+#ifdef WOLFSSL_SHA384
+        case CKM_ECDSA_SHA384:
+#endif
+#ifdef WOLFSSL_SHA512
+        case CKM_ECDSA_SHA512:
+#endif
         case CKM_ECDSA:
             if (type != CKK_EC)
                 return CKR_KEY_TYPE_INCONSISTENT;
@@ -3268,7 +3331,8 @@ CK_RV C_VerifyInit(CK_SESSION_HANDLE hSession,
                                               pMechanism->ulParameterLen != 0) {
                 return CKR_MECHANISM_PARAM_INVALID;
             }
-            init = WP11_INIT_ECDSA_VERIFY;
+            init = WP11_INIT_ECDSA_VERIFY | ((pMechanism->mechanism - CKM_ECDSA)
+                                                    << WP11_INIT_DIGEST_SHIFT);
             break;
 #endif
 #ifndef NO_HMAC
@@ -3389,13 +3453,45 @@ CK_RV C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
     #endif
 #endif
 #ifdef HAVE_ECC
-        case CKM_ECDSA:
+#ifndef NO_SHA
+        case CKM_ECDSA_SHA1:
+#endif
+#ifdef WOLFSSL_SHA224
+        case CKM_ECDSA_SHA224:
+#endif
+#ifndef NO_SHA256
+        case CKM_ECDSA_SHA256:
+#endif
+#ifdef WOLFSSL_SHA384
+        case CKM_ECDSA_SHA384:
+#endif
+#ifdef WOLFSSL_SHA512
+        case CKM_ECDSA_SHA512:
+#endif
+        case CKM_ECDSA: {
+            byte digest[WC_MAX_DIGEST_SIZE];
+            byte* data = pData;
+            int dataSz = (int)ulDataLen;
+            enum wc_HashType hash_type = WP11_Session_ToHashType(session);
+
             if (!WP11_Session_IsOpInitialized(session, WP11_INIT_ECDSA_VERIFY))
                 return CKR_OPERATION_NOT_INITIALIZED;
+            if (!WP11_Session_IsHashOpInitialized(session, mechanism,
+                                                  CKM_ECDSA))
+                return CKR_OPERATION_NOT_INITIALIZED;
 
-            ret = WP11_Ec_Verify(pSignature, (int)ulSignatureLen, pData,
-                                                    (int)ulDataLen, &stat, obj);
+            if (hash_type != WC_HASH_TYPE_NONE) {
+                if (wc_Hash(hash_type, pData, ulDataLen, digest, sizeof(digest))
+                     != 0 || (dataSz = wc_HashGetDigestSize(hash_type)) < 0) {
+                    return CKR_FUNCTION_FAILED;
+                }
+                data = digest;
+            }
+
+            ret = WP11_Ec_Verify(pSignature, (int)ulSignatureLen, data,
+                                 (word32)dataSz, &stat, obj);
             break;
+        }
 #endif
 #ifndef NO_HMAC
     #ifndef NO_MD5
