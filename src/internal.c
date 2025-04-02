@@ -4679,9 +4679,10 @@ void WP11_Slot_GetTokenLabel(WP11_Slot* slot, char* label)
     WP11_Lock_LockRO(&slot->lock);
     tokenLabel = slot->token.label;
     /* An unset label is all zeros - label is padded with ' ' and no NUL. */
-    if (tokenLabel[0] == '\0')
+    if (tokenLabel[0] == '\0') {
         XMEMSET(label, ' ', LABEL_SZ);
-    else
+        XMEMCPY(label, "wolfPKCS11", 10);
+    } else
         XMEMCPY(label, tokenLabel, LABEL_SZ);
     WP11_Lock_UnlockRO(&slot->lock);
 }
@@ -9739,4 +9740,38 @@ int WP11_Slot_GenerateRandom(WP11_Slot* slot, unsigned char* data, int len)
     WP11_Lock_UnlockRW(&slot->token.rngLock);
 
     return ret;
+}
+
+int WP11_GetOperationState(WP11_Session* session, unsigned char* stateData,
+                           unsigned long* stateDataLen)
+{
+    unsigned long bufferAvailable = *stateDataLen;
+
+    *stateDataLen = sizeof(session->mechanism);
+    *stateDataLen += sizeof(session->params);
+
+    if (bufferAvailable < *stateDataLen)
+        return CKR_BUFFER_TOO_SMALL;
+
+    if (stateData == NULL)
+        return CKR_OK;
+
+    XMEMCPY(stateData, &session->mechanism, sizeof(session->mechanism));
+    stateData += sizeof(session->mechanism);
+    XMEMCPY(stateData, &session->params, sizeof(session->params));
+
+    return CKR_OK;
+}
+
+int WP11_SetOperationState(WP11_Session* session, unsigned char* stateData,
+                           unsigned long stateDataLen)
+{
+    if (stateDataLen != (sizeof(session->mechanism) + sizeof(session->params)))
+        return CKR_SAVED_STATE_INVALID;
+
+    XMEMCPY(&session->mechanism, stateData, sizeof(session->mechanism));
+    stateData += sizeof(session->mechanism);
+    XMEMCPY(&session->params, stateData, sizeof(session->params));
+
+    return CKR_OK;
 }

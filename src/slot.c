@@ -948,7 +948,7 @@ CK_RV C_GetSessionInfo(CK_SESSION_HANDLE hSession,
 
 /**
  * Get the state of the current operation.
- * Not supported.
+ * Only intended for Digest state.
  *
  * @param  hSession            [in]      Session handle.
  * @param  pOperationState     [in]      Buffer to hold operation state.
@@ -959,7 +959,7 @@ CK_RV C_GetSessionInfo(CK_SESSION_HANDLE hSession,
  * @return  CKR_CRYPTOKI_NOT_INITIALIZED when library not initialized.
  *          CKR_SESSION_HANDLE_INVALID when session handle is not valid.
  *          CKR_ARGUMENTS_BAD when pulOperationStateLen is NULL.
- *          CKR_STATE_UNSAVEABLE indicating function not supported.
+ *          CKR_STATE_UNSAVEABLE indicating the state is not saveable.
  */
 CK_RV C_GetOperationState(CK_SESSION_HANDLE hSession,
                           CK_BYTE_PTR pOperationState,
@@ -974,14 +974,13 @@ CK_RV C_GetOperationState(CK_SESSION_HANDLE hSession,
     if (pulOperationStateLen == NULL)
         return CKR_ARGUMENTS_BAD;
 
-    (void)pOperationState;
-
-    return CKR_STATE_UNSAVEABLE;
+    return WP11_GetOperationState(session, pOperationState,
+        pulOperationStateLen);
 }
 
 /**
  * Get the state of the current operation.
- * Not supported.
+ * Only intended for Digest state.
  *
  * @param  hSession             [in]  Session handle.
  * @param  pOperationState      [in]  Serialized state.
@@ -991,7 +990,7 @@ CK_RV C_GetOperationState(CK_SESSION_HANDLE hSession,
  * @return  CKR_CRYPTOKI_NOT_INITIALIZED when library not initialized.
  *          CKR_SESSION_HANDLE_INVALID when session handle is not valid.
  *          CKR_ARGUMENTS_BAD when pOperationState is NULL.
- *          CKR_SAVED_STATE_INVALID indicating function not supported.
+ *          CKR_SAVED_STATE_INVALID indicating the state is not valid.
  */
 CK_RV C_SetOperationState(CK_SESSION_HANDLE hSession,
                           CK_BYTE_PTR pOperationState,
@@ -1008,11 +1007,11 @@ CK_RV C_SetOperationState(CK_SESSION_HANDLE hSession,
     if (pOperationState == NULL)
         return CKR_ARGUMENTS_BAD;
 
-    (void)ulOperationStateLen;
     (void)hEncryptionKey;
     (void)hAuthenticationKey;
 
-    return CKR_SAVED_STATE_INVALID;
+    return WP11_SetOperationState(session, pOperationState,
+        ulOperationStateLen);
 }
 
 /**
