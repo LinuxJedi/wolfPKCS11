@@ -2822,6 +2822,12 @@ CK_RV C_SignInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
     #ifdef WOLFSSL_SHA512
         case CKM_SHA512_HMAC:
     #endif
+    #ifdef WOLFSSL_SHA3
+        case CKM_SHA3_224_HMAC:
+        case CKM_SHA3_256_HMAC:
+        case CKM_SHA3_384_HMAC:
+        case CKM_SHA3_512_HMAC:
+    #endif
             if (type != CKK_GENERIC_SECRET)
                 return CKR_KEY_TYPE_INCONSISTENT;
             if (pMechanism->pParameter != NULL ||
@@ -3073,6 +3079,12 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
     #ifdef WOLFSSL_SHA512
         case CKM_SHA512_HMAC:
     #endif
+    #ifdef WOLFSSL_SHA3
+        case CKM_SHA3_224_HMAC:
+        case CKM_SHA3_256_HMAC:
+        case CKM_SHA3_384_HMAC:
+        case CKM_SHA3_512_HMAC:
+    #endif
             if (!WP11_Session_IsOpInitialized(session, WP11_INIT_HMAC_SIGN))
                 return CKR_OPERATION_NOT_INITIALIZED;
 
@@ -3156,6 +3168,12 @@ CK_RV C_SignUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart,
     #ifdef WOLFSSL_SHA512
         case CKM_SHA512_HMAC:
     #endif
+    #ifdef WOLFSSL_SHA3
+        case CKM_SHA3_224_HMAC:
+        case CKM_SHA3_256_HMAC:
+        case CKM_SHA3_384_HMAC:
+        case CKM_SHA3_512_HMAC:
+    #endif
             if (!WP11_Session_IsOpInitialized(session, WP11_INIT_HMAC_SIGN))
                 return CKR_OPERATION_NOT_INITIALIZED;
 
@@ -3232,6 +3250,12 @@ CK_RV C_SignFinal(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pSignature,
     #endif
     #ifdef WOLFSSL_SHA512
         case CKM_SHA512_HMAC:
+    #endif
+    #ifdef WOLFSSL_SHA3
+        case CKM_SHA3_224_HMAC:
+        case CKM_SHA3_256_HMAC:
+        case CKM_SHA3_384_HMAC:
+        case CKM_SHA3_512_HMAC:
     #endif
             if (!WP11_Session_IsOpInitialized(session, WP11_INIT_HMAC_SIGN))
                 return CKR_OPERATION_NOT_INITIALIZED;
@@ -3505,6 +3529,12 @@ CK_RV C_VerifyInit(CK_SESSION_HANDLE hSession,
     #ifdef WOLFSSL_SHA512
         case CKM_SHA512_HMAC:
     #endif
+    #ifdef WOLFSSL_SHA3
+        case CKM_SHA3_224_HMAC:
+        case CKM_SHA3_256_HMAC:
+        case CKM_SHA3_384_HMAC:
+        case CKM_SHA3_512_HMAC:
+    #endif
             if (type != CKK_GENERIC_SECRET)
                 return CKR_KEY_TYPE_INCONSISTENT;
             if (pMechanism->pParameter != NULL ||
@@ -3718,6 +3748,12 @@ CK_RV C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
     #ifdef WOLFSSL_SHA512
         case CKM_SHA512_HMAC:
     #endif
+    #ifdef WOLFSSL_SHA3
+        case CKM_SHA3_224_HMAC:
+        case CKM_SHA3_256_HMAC:
+        case CKM_SHA3_384_HMAC:
+        case CKM_SHA3_512_HMAC:
+    #endif
             if (!WP11_Session_IsOpInitialized(session, WP11_INIT_HMAC_VERIFY))
                 return CKR_OPERATION_NOT_INITIALIZED;
 
@@ -3793,6 +3829,12 @@ CK_RV C_VerifyUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart,
     #ifdef WOLFSSL_SHA512
         case CKM_SHA512_HMAC:
     #endif
+    #ifdef WOLFSSL_SHA3
+        case CKM_SHA3_224_HMAC:
+        case CKM_SHA3_256_HMAC:
+        case CKM_SHA3_384_HMAC:
+        case CKM_SHA3_512_HMAC:
+    #endif
             if (!WP11_Session_IsOpInitialized(session, WP11_INIT_HMAC_VERIFY))
                 return CKR_OPERATION_NOT_INITIALIZED;
 
@@ -3865,6 +3907,12 @@ CK_RV C_VerifyFinal(CK_SESSION_HANDLE hSession,
     #endif
     #ifdef WOLFSSL_SHA512
         case CKM_SHA512_HMAC:
+    #endif
+    #ifdef WOLFSSL_SHA3
+        case CKM_SHA3_224_HMAC:
+        case CKM_SHA3_256_HMAC:
+        case CKM_SHA3_384_HMAC:
+        case CKM_SHA3_512_HMAC:
     #endif
             if (!WP11_Session_IsOpInitialized(session, WP11_INIT_HMAC_VERIFY))
                 return CKR_OPERATION_NOT_INITIALIZED;

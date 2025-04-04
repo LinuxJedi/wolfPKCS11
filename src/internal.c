@@ -5009,6 +5009,18 @@ static int wp11_hash_type(CK_MECHANISM_TYPE hashMech,
         case CKM_SHA512:
             *hashType = WC_HASH_TYPE_SHA512;
             break;
+        case CKM_SHA3_224:
+            *hashType = WC_HASH_TYPE_SHA3_224;
+            break;
+        case CKM_SHA3_256:
+            *hashType = WC_HASH_TYPE_SHA3_256;
+            break;
+        case CKM_SHA3_384:
+            *hashType = WC_HASH_TYPE_SHA3_384;
+            break;
+        case CKM_SHA3_512:
+            *hashType = WC_HASH_TYPE_SHA3_512;
+            break;
         default:
             ret = BAD_FUNC_ARG;
             break;
@@ -9217,6 +9229,18 @@ static int wp11_digest_hash_type(CK_MECHANISM_TYPE digestMech, int* hashType)
         case CKM_SHA512:
             *hashType = WC_HASH_TYPE_SHA512;
             break;
+        case CKM_SHA3_224:
+            *hashType = WC_HASH_TYPE_SHA3_224;
+            break;
+        case CKM_SHA3_256:
+            *hashType = WC_HASH_TYPE_SHA3_256;
+            break;
+        case CKM_SHA3_384:
+            *hashType = WC_HASH_TYPE_SHA3_384;
+            break;
+        case CKM_SHA3_512:
+            *hashType = WC_HASH_TYPE_SHA3_512;
+            break;
         default:
             ret = CKR_MECHANISM_INVALID;
             break;
@@ -9397,6 +9421,18 @@ static int wp11_hmac_hash_type(CK_MECHANISM_TYPE hmacMech, int* hashType)
             break;
         case CKM_SHA512_HMAC:
             *hashType = WC_SHA512;
+            break;
+        case CKM_SHA3_224_HMAC:
+            *hashType = WC_SHA3_224;
+            break;
+        case CKM_SHA3_256_HMAC:
+            *hashType = WC_SHA3_256;
+            break;
+        case CKM_SHA3_384_HMAC:
+            *hashType = WC_SHA3_384;
+            break;
+        case CKM_SHA3_512_HMAC:
+            *hashType = WC_SHA3_512;
             break;
         default:
             ret = BAD_FUNC_ARG;

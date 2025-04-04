@@ -2258,6 +2258,108 @@ static CK_RV test_digest(void* args)
 }
 #endif
 
+#ifdef WOLFSSL_SHA3
+static CK_RV test_digest_sha3(void* args)
+{
+    CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
+    CK_RV ret;
+    CK_MECHANISM mech;
+    byte data[64], hash[64];
+    CK_ULONG dataSz, hashSz;
+    const unsigned char sha3_exp[] = {
+        0x9e, 0xce, 0x08, 0x6e, 0x9b, 0xac, 0x49, 0x1f,
+        0xac, 0x5c, 0x1d, 0x10, 0x46, 0xca, 0x11, 0xd7,
+        0x37, 0xb9, 0x2a, 0x2b, 0x2e, 0xbd, 0x93, 0xf0,
+        0x05, 0xd7, 0xb7, 0x10, 0x11, 0x0c, 0x0a, 0x67,
+        0x82, 0x88, 0x16, 0x6e, 0x7f, 0xbe, 0x79, 0x68,
+        0x83, 0xa4, 0xf2, 0xe9, 0xb3, 0xca, 0x9f, 0x48,
+        0x4f, 0x52, 0x1d, 0x0c, 0xe4, 0x64, 0x34, 0x5c,
+        0xc1, 0xae, 0xc9, 0x67, 0x79, 0x14, 0x9c, 0x14
+
+    };
+
+    const unsigned char sha3_exp2[] = {
+        0x64, 0xc3, 0x7f, 0x15, 0xca, 0x73, 0xf0, 0x4d,
+        0x4a, 0xb3, 0x4f, 0x6f, 0x93, 0x88, 0xdc, 0x63,
+        0x86, 0x0e, 0x63, 0x0e, 0xfc, 0x30, 0x11, 0xde,
+        0xf4, 0x8c, 0x4e, 0x62, 0x5c, 0x9c, 0x37, 0x61,
+        0x6d, 0xf5, 0x01, 0x7d, 0xf9, 0x46, 0x11, 0x04,
+        0xb2, 0x8a, 0xad, 0x2b, 0x87, 0x4a, 0x5b, 0x46,
+        0x47, 0x57, 0x39, 0x8b, 0x83, 0xc2, 0x4b, 0xa0,
+        0x8e, 0xb5, 0x7d, 0x57, 0xd9, 0xd8, 0x3d, 0xfe
+    };
+
+    XMEMSET(data, 0, sizeof(data));
+    XMEMCPY(data, "test", 4);
+    dataSz = 4;
+    hashSz = sizeof(hash);
+
+    mech.mechanism = CKM_SHA3_512;
+    mech.ulParameterLen = 0;
+    mech.pParameter = NULL;
+
+    ret = funcList->C_DigestInit(session , &mech);
+    CHECK_CKR(ret, "Could not init digest");
+    if (ret == CKR_OK) {
+        ret = funcList->C_Digest(session, data, dataSz, hash, &hashSz);
+        CHECK_CKR(ret, "Error running digest");
+    }
+    if (ret == CKR_OK) {
+        CHECK_COND(XMEMCMP(hash, sha3_exp, 32) == 0, ret,
+                   "SHA does not match");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_DigestInit(session , &mech);
+        CHECK_CKR(ret, "Could not init digest");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_DigestUpdate(session, data, dataSz);
+        CHECK_CKR(ret, "Could not update digest");
+    }
+
+    if (ret == CKR_OK) {
+        hashSz = sizeof(hash);
+        ret = funcList->C_DigestFinal(session, hash, &hashSz);
+        CHECK_CKR(ret, "Error running digest final");
+    }
+
+    if (ret == CKR_OK) {
+        CHECK_COND(XMEMCMP(hash, sha3_exp, 32) == 0, ret,
+                   "SHA does not match");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_DigestInit(session , &mech);
+        CHECK_CKR(ret, "Could not init digest");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_DigestUpdate(session, data, dataSz);
+        CHECK_CKR(ret, "Could not update digest");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_DigestUpdate(session, data, dataSz);
+        CHECK_CKR(ret, "Could not update digest");
+    }
+
+    if (ret == CKR_OK) {
+        hashSz = sizeof(hash);
+        ret = funcList->C_DigestFinal(session, hash, &hashSz);
+        CHECK_CKR(ret, "Error running digest final");
+    }
+
+    if (ret == CKR_OK) {
+        CHECK_COND(XMEMCMP(hash, sha3_exp2, 32) == 0, ret,
+                   "SHA does not match");
+    }
+
+    return ret;
+}
+#endif
+
 static CK_RV test_digest_fail(void* args)
 {
     CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
@@ -8167,6 +8269,66 @@ static CK_RV test_hmac_sha512_fail(void* args)
     return ret;
 }
 #endif
+
+#ifdef WOLFSSL_SHA3
+static CK_RV test_hmac_sha3_512(void* args)
+{
+    CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
+    CK_RV ret;
+    CK_OBJECT_HANDLE key;
+    static unsigned char keyData[] = {
+        0x74, 0x9A, 0xBD, 0xAA, 0x2A, 0x52, 0x07, 0x47,
+        0xD6, 0xA6, 0x36, 0xB2, 0x07, 0x32, 0x8E, 0xD0,
+        0xBA, 0x69, 0x7B, 0xC6, 0xC3, 0x44, 0x9E, 0xD4,
+        0x81, 0x48, 0xFD, 0x2D, 0x68, 0xA2, 0x8B, 0x67,
+        0xBB, 0xA1, 0x75, 0xC8, 0x36, 0x2C, 0x4A, 0xD2,
+        0x1B, 0xF7, 0x8B, 0xBA, 0xCF, 0x0D, 0xF9, 0xEF,
+        0xEC, 0xF1, 0x81, 0x1E, 0x7B, 0x9B, 0x03, 0x47,
+        0x9A, 0xBF, 0x65, 0xCC, 0x7F, 0x65, 0x24, 0x69,
+    };
+    static unsigned char exp[] = {
+        0xf0, 0xe1, 0x30, 0xfa, 0xc8, 0xa7, 0x82, 0x54,
+        0xc2, 0xc8, 0xc8, 0x1f, 0x98, 0xad, 0x81, 0x38,
+        0xdd, 0xf8, 0xe4, 0xc9, 0x99, 0x52, 0x83, 0x69,
+        0x7c, 0x0d, 0xd1, 0x3b, 0x71, 0xc6, 0x02, 0x39,
+        0x5b, 0xe8, 0x9e, 0x8b, 0x37, 0x97, 0x9f, 0x02,
+        0x47, 0x5e, 0x39, 0x8b, 0x50, 0xa8, 0x80, 0xd4,
+        0xe3, 0x48, 0x39, 0x8a, 0x9c, 0x11, 0xc8, 0x31,
+        0x29, 0x03, 0x85, 0xdf, 0x14, 0x68, 0x90, 0x14
+    };
+
+    ret = get_generic_key(session, keyData, sizeof(keyData), CK_FALSE, &key);
+    if (ret == CKR_OK)
+        ret = test_hmac(session, CKM_SHA3_512_HMAC, exp, sizeof(exp), key);
+
+    return ret;
+}
+
+static CK_RV test_hmac_sha3_512_fail(void* args)
+{
+    CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
+    CK_RV  ret = CKR_OK;
+    CK_MECHANISM mech;
+    static unsigned char keyData[] = {
+        0x74, 0x9A, 0xBD, 0xAA, 0x2A, 0x52, 0x07, 0x47,
+        0xD6, 0xA6, 0x36, 0xB2, 0x07, 0x32, 0x8E, 0xD0,
+        0xBA, 0x69, 0x7B, 0xC6, 0xC3, 0x44, 0x9E, 0xD4,
+        0x81, 0x48, 0xFD, 0x2D, 0x68, 0xA2, 0x8B, 0x67,
+        0xBB, 0xA1, 0x75, 0xC8, 0x36, 0x2C, 0x4A, 0xD2,
+        0x1B, 0xF7, 0x8B, 0xBA, 0xCF, 0x0D, 0xF9, 0xEF,
+        0xEC, 0xF1, 0x81, 0x1E, 0x7B, 0x9B, 0x03, 0x47,
+        0x9A, 0xBF, 0x65, 0xCC, 0x7F, 0x65, 0x24, 0x69,
+    };
+
+    mech.mechanism      = CKM_SHA3_512_HMAC;
+    mech.ulParameterLen = 0;
+    mech.pParameter     = NULL;
+
+    ret = test_hmac_fail(session, &mech, keyData, sizeof(keyData));
+
+    return ret;
+}
+#endif
 #endif
 
 static CK_RV test_x509(void* args)
@@ -8685,6 +8847,9 @@ static TEST_FUNC testFunc[] = {
 #ifndef NOSHA256
     PKCS11TEST_FUNC_SESS_DECL(test_digest),
 #endif
+#ifdef WOLFSSL_SHA3
+    PKCS11TEST_FUNC_SESS_DECL(test_digest_sha3),
+#endif
 #ifndef NO_HMAC
 #ifndef NO_MD5
     PKCS11TEST_FUNC_SESS_DECL(test_hmac_md5),
@@ -8709,6 +8874,10 @@ static TEST_FUNC testFunc[] = {
 #ifdef WOLFSSL_SHA512
     PKCS11TEST_FUNC_SESS_DECL(test_hmac_sha512),
     PKCS11TEST_FUNC_SESS_DECL(test_hmac_sha512_fail),
+#endif
+#ifdef WOLFSSL_SHA3
+    PKCS11TEST_FUNC_SESS_DECL(test_hmac_sha3_512),
+    PKCS11TEST_FUNC_SESS_DECL(test_hmac_sha3_512_fail),
 #endif
 #endif
     PKCS11TEST_FUNC_SESS_DECL(test_random),
