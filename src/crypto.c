@@ -31,6 +31,7 @@
 #endif
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/error-crypt.h>
+#include <wolfssl/wolfcrypt/asn.h>
 
 #include <wolfpkcs11/pkcs11.h>
 #include <wolfpkcs11/internal.h>
@@ -2880,6 +2881,7 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
              CK_ULONG_PTR pulSignatureLen)
 {
     int ret;
+    int oid;
     WP11_Session* session;
     WP11_Object* obj = NULL;
     word32 sigLen;
@@ -2932,7 +2934,7 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
         case CKM_SHA512_RSA_PKCS:
     #endif
         case CKM_RSA_PKCS: {
-            byte digest[WC_MAX_DIGEST_SIZE];
+            byte digest[MAX_DER_DIGEST_SZ];
             byte* data = pData;
             int dataSz = (int)ulDataLen;
             enum wc_HashType hash_type = WP11_Session_ToHashType(session);
@@ -2955,7 +2957,20 @@ CK_RV C_Sign(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
                      != 0 || (dataSz = wc_HashGetDigestSize(hash_type)) < 0) {
                     return CKR_FUNCTION_FAILED;
                 }
-                data = digest;
+                oid = wc_HashGetOID(hash_type);
+                if (oid < 0)
+                    return CKR_FUNCTION_FAILED;
+
+                ret = wc_EncodeSignature(digest, digest, dataSz, oid);
+
+                if (ret > 0) {
+                    data = digest;
+                    dataSz = ret;
+                    ret = 0;
+                }
+                else {
+                    return CKR_FUNCTION_FAILED;
+                }
             }
 
             ret = WP11_RsaPkcs15_Sign(data, (word32)dataSz, pSignature,
@@ -3585,6 +3600,7 @@ CK_RV C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
 {
     int ret;
     int stat;
+    int oid;
     WP11_Session* session;
     WP11_Object* obj = NULL;
     CK_MECHANISM_TYPE mechanism;
@@ -3627,7 +3643,7 @@ CK_RV C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
         case CKM_SHA512_RSA_PKCS:
     #endif
         case CKM_RSA_PKCS: {
-            byte digest[WC_MAX_DIGEST_SIZE];
+            byte digest[MAX_DER_DIGEST_SZ];
             byte* data = pData;
             int dataSz = (int)ulDataLen;
             enum wc_HashType hash_type = WP11_Session_ToHashType(session);
@@ -3644,7 +3660,20 @@ CK_RV C_Verify(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
                      != 0 || (dataSz = wc_HashGetDigestSize(hash_type)) < 0) {
                     return CKR_FUNCTION_FAILED;
                 }
-                data = digest;
+                oid = wc_HashGetOID(hash_type);
+                if (oid < 0)
+                    return CKR_FUNCTION_FAILED;
+
+                ret = wc_EncodeSignature(digest, digest, dataSz, oid);
+
+                if (ret > 0) {
+                    data = digest;
+                    dataSz = ret;
+                    ret = 0;
+                }
+                else {
+                    return CKR_FUNCTION_FAILED;
+                }
             }
 
             ret = WP11_RsaPkcs15_Verify(pSignature, (int)ulSignatureLen, data,
