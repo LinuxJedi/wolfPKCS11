@@ -1024,8 +1024,6 @@ CK_RV C_SetAttributeValue(CK_SESSION_HANDLE hSession,
         return CKR_SESSION_HANDLE_INVALID;
     if (pTemplate == NULL)
         return CKR_ARGUMENTS_BAD;
-    if (!WP11_Session_IsRW(session))
-        return CKR_SESSION_READ_ONLY;
 
     ret = WP11_Object_Find(session, hObject, &obj, 0);
     if (ret != 0)
