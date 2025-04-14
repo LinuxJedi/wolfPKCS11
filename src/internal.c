@@ -4822,7 +4822,12 @@ int WP11_Session_GetState(WP11_Session* session)
  */
 int WP11_Session_IsRW(WP11_Session* session)
 {
+#ifdef WOLFPKCS11_NO_LOGIN
+    (void) session;
+    return 1;
+#else
     return session->inUse == WP11_SESSION_RW;
+#endif
 }
 
 /**
