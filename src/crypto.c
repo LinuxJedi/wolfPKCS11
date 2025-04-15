@@ -364,6 +364,9 @@ static CK_RV SetAttributeValue(WP11_Session* session, WP11_Object* obj,
                 cnt = DH_KEY_PARAMS_CNT;
                 break;
         #endif
+        #ifdef HAVE_HKDF
+            case CKK_HKDF:
+        #endif
         #ifndef NO_AES
             case CKK_AES:
         #endif
@@ -411,6 +414,9 @@ static CK_RV SetAttributeValue(WP11_Session* session, WP11_Object* obj,
             case CKK_DH:
                 ret = WP11_Object_SetDhKey(obj, data, len);
                 break;
+    #endif
+    #ifdef HAVE_HKDF
+            case CKK_HKDF:
     #endif
     #ifndef NO_AES
             case CKK_AES:
@@ -697,6 +703,12 @@ static CK_RV CreateObject(WP11_Session* session, CK_ATTRIBUTE_PTR pTemplate,
             objType != CKC_WTLS) {
             return CKR_ATTRIBUTE_VALUE_INVALID;
         }
+    }
+    else if (objectClass == CKO_DATA) {
+        FindAttributeType(pTemplate, ulCount, CKA_VALUE, &attr);
+        if (attr == NULL)
+            return CKR_TEMPLATE_INCOMPLETE;
+        objType = CKK_HKDF;
     }
     else {
         FindAttributeType(pTemplate, ulCount, CKA_KEY_TYPE, &attr);
@@ -4714,6 +4726,7 @@ static int SymmKeyLen(WP11_Object* obj, word32 len, word32* symmKeyLen)
 
     switch (WP11_Object_GetType(obj)) {
         case CKK_AES:
+        case CKK_HKDF:
         case CKK_GENERIC_SECRET:
         default:
             if (valueLen > 0 && valueLen <= len)

@@ -6764,6 +6764,9 @@ int WP11_Object_GetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
         #ifndef NO_AES
                         case CKK_AES:
         #endif
+        #ifdef HAVE_HKDF
+                        case CKK_HKDF:
+        #endif
                         case CKK_GENERIC_SECRET:
                             ret = SecretObject_GetAttr(object, type, data, len);
                             break;
@@ -7043,6 +7046,9 @@ int WP11_Object_SetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
 #ifndef NO_AES
                 case CKK_AES:
 #endif
+#ifdef HAVE_HKDF
+                case CKK_HKDF:
+#endif
                 case CKK_GENERIC_SECRET:
                     break;
                 default:
@@ -7063,6 +7069,9 @@ int WP11_Object_SetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
 #endif
 #ifndef NO_AES
                 case CKK_AES:
+#endif
+#ifdef HAVE_HKDF
+                case CKK_HKDF:
 #endif
                 case CKK_GENERIC_SECRET:
                    break;
@@ -8223,26 +8232,28 @@ int WP11_KDF_Derive(WP11_Session* session, CK_HKDF_PARAMS_PTR params,
         return CKR_MECHANISM_PARAM_INVALID;
     }
 
-    switch (params->ulSaltType) {
-        case CKF_HKDF_SALT_NULL:
-            break;
+    if (params->bExtract) {
+        switch (params->ulSaltType) {
+            case CKF_HKDF_SALT_NULL:
+                break;
 
-        case CKF_HKDF_SALT_DATA:
-            salt = params->pSalt;
-            saltLen = params->ulSaltLen;
-            break;
+            case CKF_HKDF_SALT_DATA:
+                salt = params->pSalt;
+                saltLen = params->ulSaltLen;
+                break;
 
-        case CKF_HKDF_SALT_KEY:
-            ret = WP11_Object_Find(session, params->hSaltKey, &saltKey, 1);
-            if (ret != 0)
-                return CKR_OBJECT_HANDLE_INVALID;
-            salt = saltKey->keyData;
-            saltLen = saltKey->keyDataLen;
-            break;
+            case CKF_HKDF_SALT_KEY:
+                ret = WP11_Object_Find(session, params->hSaltKey, &saltKey, 1);
+                if (ret != 0)
+                    return CKR_OBJECT_HANDLE_INVALID;
+                salt = saltKey->keyData;
+                saltLen = saltKey->keyDataLen;
+                break;
 
-        default:
-            return CKR_MECHANISM_PARAM_INVALID;
-            break;
+            default:
+                return CKR_MECHANISM_PARAM_INVALID;
+                break;
+        }
     }
 
     ret = wc_HKDF(hashType, priv->keyData, priv->keyDataLen, salt, saltLen,
