@@ -6046,41 +6046,45 @@ static int EcSetPoint(ecc_key* key, byte* der, int len)
 int WP11_Object_SetEcKey(WP11_Object* object, unsigned char** data,
                          CK_ULONG* len)
 {
-    int ret;
-    ecc_key* key;
+    int ret = 0;
+    ecc_key* key = NULL;
 
     if (object->onToken)
         WP11_Lock_LockRW(object->lock);
 
     key = &object->data.ecKey;
-    ret = wc_ecc_init_ex(key, NULL, object->slot->devId);
-    if (ret == 0) {
-        if (ret == 0 && data[0] != NULL)
-            ret = EcSetParams(key, data[0], (int)len[0]);
-        if (ret == 0 && data[1] != NULL) {
-            key->type = ECC_PRIVATEKEY_ONLY;
-            ret = SetMPI(key->k, data[1], (int)len[1]);
-        }
-        if (ret == 0 && data[2] != NULL) {
-            if (key->type == ECC_PRIVATEKEY_ONLY)
-                key->type = ECC_PRIVATEKEY;
-            else
-                key->type = ECC_PUBLICKEY;
-            ret = EcSetPoint(key, data[2], (int)len[2]);
-        }
-    #ifdef WOLFPKCS11_TPM
-        if (ret == 0 &&
-            (key->type == ECC_PRIVATEKEY_ONLY || key->type == ECC_PRIVATEKEY)) {
-            /* load private key */
-            object->slot->tpmCtx.eccKey = (WOLFTPM2_KEY*)&object->tpmKey;
-            ret = wolfTPM2_EccKey_WolfToTpm_ex(&object->slot->tpmDev,
-                &object->slot->tpmSrk, &object->data.ecKey,
-                (WOLFTPM2_KEY*)&object->tpmKey);
-        }
-    #endif
 
-        if (ret != 0)
-            wc_ecc_free(key);
+    if (data[0] || data[1] || data[2]) {
+        ret = wc_ecc_init_ex(key, NULL, object->slot->devId);
+
+        if (ret == 0) {
+            if (ret == 0 && data[0] != NULL)
+                ret = EcSetParams(key, data[0], (int)len[0]);
+            if (ret == 0 && data[1] != NULL) {
+                key->type = ECC_PRIVATEKEY_ONLY;
+                ret = SetMPI(key->k, data[1], (int)len[1]);
+            }
+            if (ret == 0 && data[2] != NULL) {
+                if (key->type == ECC_PRIVATEKEY_ONLY)
+                    key->type = ECC_PRIVATEKEY;
+                else
+                    key->type = ECC_PUBLICKEY;
+                ret = EcSetPoint(key, data[2], (int)len[2]);
+            }
+        #ifdef WOLFPKCS11_TPM
+            if (ret == 0 &&
+                (key->type == ECC_PRIVATEKEY_ONLY || key->type == ECC_PRIVATEKEY)) {
+                /* load private key */
+                object->slot->tpmCtx.eccKey = (WOLFTPM2_KEY*)&object->tpmKey;
+                ret = wolfTPM2_EccKey_WolfToTpm_ex(&object->slot->tpmDev,
+                    &object->slot->tpmSrk, &object->data.ecKey,
+                    (WOLFTPM2_KEY*)&object->tpmKey);
+            }
+        #endif
+
+            if (ret != 0)
+                wc_ecc_free(key);
+        }
     }
 
     if (object->onToken)
