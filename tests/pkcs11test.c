@@ -4922,6 +4922,57 @@ static CK_RV ecdsa_test(CK_SESSION_HANDLE session, CK_OBJECT_HANDLE privKey,
     return ret;
 }
 
+/* Calling C_SetAttributeValue used to erase a key */
+static CK_RV test_ecc_key_erase_bug(void* args)
+{
+    CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
+    CK_RV ret = CKR_OK;
+    CK_OBJECT_HANDLE obj;
+    byte keyGet[sizeof(ecc_p256_priv)];
+    CK_ATTRIBUTE ecc_p256_priv_key[] = {
+        { CKA_CLASS,             &privKeyClass,     sizeof(privKeyClass)      },
+        { CKA_KEY_TYPE,          &eccKeyType,       sizeof(eccKeyType)        },
+        { CKA_VERIFY,            &ckTrue,           sizeof(ckTrue)            },
+        { CKA_EC_PARAMS,         ecc_p256_params,   sizeof(ecc_p256_params)   },
+        { CKA_VALUE,             ecc_p256_priv,     sizeof(ecc_p256_priv)     },
+    };
+    static int ecc_p256_priv_key_cnt =
+                           sizeof(ecc_p256_priv_key)/sizeof(*ecc_p256_priv_key);
+    CK_ATTRIBUTE updateTmpl[] = {
+        { CKA_EXTRACTABLE,         &ckTrue,         sizeof(ckTrue)            },
+    };
+    CK_ULONG updateTmplCnt = sizeof(updateTmpl) / sizeof(*updateTmpl);
+
+    CK_ATTRIBUTE getTmpl[] = {
+        { CKA_VALUE,          keyGet,   sizeof(ecc_p256_priv) },
+    };
+    CK_ULONG getTmplCnt = sizeof(getTmpl) / sizeof(*getTmpl);
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_CreateObject(session, ecc_p256_priv_key,
+                                                   ecc_p256_priv_key_cnt, &obj);
+        CHECK_CKR(ret, "EC Private Key Create Object");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_SetAttributeValue(session, obj, updateTmpl,
+                                            updateTmplCnt);
+        CHECK_CKR(ret, "Update attribute sensitive");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_GetAttributeValue(session, obj, getTmpl, getTmplCnt);
+        CHECK_CKR(ret, "Get key value");
+    }
+
+    if (ret == CKR_OK) {
+        if (XMEMCMP(keyGet, ecc_p256_priv, sizeof(ecc_p256_priv)) != 0)
+            ret = CKR_FUNCTION_FAILED;
+        CHECK_CKR(ret, "Key compare");
+    }
+    return ret;
+}
+
 static CK_RV test_ecc_create_key_fail(void* args)
 {
     CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
@@ -8344,6 +8395,7 @@ static TEST_FUNC testFunc[] = {
 #endif
 #endif
 #ifdef HAVE_ECC
+    PKCS11TEST_FUNC_SESS_DECL(test_ecc_key_erase_bug),
     PKCS11TEST_FUNC_SESS_DECL(test_ecc_create_key_fail),
     PKCS11TEST_FUNC_SESS_DECL(test_ecc_fixed_keys_ecdh),
     PKCS11TEST_FUNC_SESS_DECL(test_ecc_fixed_keys_ecdsa),
