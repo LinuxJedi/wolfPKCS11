@@ -300,6 +300,234 @@ static CK_RV CheckAttributes(CK_ATTRIBUTE* pTemplate, CK_ULONG ulCount, int set)
     return CKR_OK;
 }
 
+static CK_RV TemplateHasAttribute(CK_ATTRIBUTE_TYPE type,
+        CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount)
+{
+    for (CK_ULONG i = 0; i < ulCount; i++) {
+        if (type == pTemplate[i].type)
+            return CKR_OK;
+    }
+
+    return CKR_ATTRIBUTE_TYPE_INVALID;
+}
+
+static CK_RV SetAttributePublicDefaults(WP11_Object* obj,
+        CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount)
+{
+    CK_RV ret = CKR_OK;
+    CK_BBOOL encrypt = CK_TRUE;
+    CK_BBOOL recover = CK_TRUE;
+    CK_BBOOL wrap = CK_TRUE;
+    CK_BBOOL derive = CK_FALSE;
+    CK_BBOOL verify = CK_TRUE;
+    CK_KEY_TYPE type;
+
+    type = WP11_Object_GetType(obj);
+    switch(type) {
+        /* If we implement DSA
+        case CKK_DSA:
+            encrypt = CK_FALSE;
+            recover = CK_FALSE;
+            wrap = CK_FALSE;
+            break;
+        */
+        case CKK_DH:
+            verify = CK_FALSE;
+            derive = CK_TRUE;
+            encrypt = CK_FALSE;
+            recover = CK_FALSE;
+            wrap = CK_FALSE;
+            break;
+        case CKK_EC:
+            derive = CK_FALSE;
+            verify = CK_FALSE;
+            encrypt = CK_FALSE;
+            recover = CK_FALSE;
+            wrap = CK_FALSE;
+            break;
+    }
+    /* If the following attributes have not been provided, set defaults */
+    if (TemplateHasAttribute(CKA_ENCRYPT, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_ENCRYPT, &encrypt, sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_VERIFY, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_VERIFY, &verify, sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_VERIFY_RECOVER, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_VERIFY_RECOVER, &recover,
+                sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_WRAP, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_WRAP, &wrap, sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_DERIVE, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_DERIVE, &derive, sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+
+    return ret;
+}
+
+static CK_RV SetAttributeSecretDefaults(WP11_Object* obj,
+        CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount)
+{
+    CK_RV ret = CKR_OK;
+    CK_BBOOL trueVal = CK_TRUE;
+    CK_BBOOL falseVal = CK_FALSE;
+
+    /* If the following attributes have not been provided, set defaults */
+    /* CKA_SENSITIVE defaults false, but that happens for us anyway */
+
+    if (TemplateHasAttribute(CKA_EXTRACTABLE, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_EXTRACTABLE, &trueVal,
+                sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_ENCRYPT, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_ENCRYPT, &trueVal,
+                sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_DECRYPT, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_DECRYPT, &trueVal,
+                sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    /* CKA_SIGN / CKA_VERIFY default false */
+
+    if (TemplateHasAttribute(CKA_WRAP, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_WRAP, &trueVal,
+                sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_UNWRAP, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_UNWRAP, &trueVal,
+                sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    /* Next two are forced attributes */
+    ret = WP11_Object_SetAttr(obj, CKA_ALWAYS_SENSITIVE, &falseVal,
+            sizeof(CK_BBOOL));
+    if (ret != CKR_OK)
+        return ret;
+
+    ret = WP11_Object_SetAttr(obj, CKA_NEVER_EXTRACTABLE, &falseVal,
+            sizeof(CK_BBOOL));
+    return ret;
+}
+
+static CK_RV SetAttributePrivateDefaults(WP11_Object* obj,
+        CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount)
+{
+    CK_RV ret = CKR_OK;
+    CK_BBOOL trueVal = CK_TRUE;
+    CK_BBOOL falseVal = CK_FALSE;
+    CK_BBOOL encrypt = CK_TRUE;
+    CK_BBOOL sign = CK_FALSE;
+    CK_BBOOL recover = CK_TRUE;
+    CK_BBOOL wrap = CK_TRUE;
+    CK_BBOOL derive = CK_TRUE;
+    CK_KEY_TYPE type;
+
+    type = WP11_Object_GetType(obj);
+    switch(type) {
+        case CKK_RSA:
+        /* If we implement DSA
+        case CKK_DSA:
+        */
+            sign = CK_TRUE;
+            derive = CK_FALSE;
+            break;
+        case CKK_DH:
+            encrypt = CK_FALSE;
+            recover = CK_FALSE;
+            wrap = CK_FALSE;
+            break;
+        case CKK_EC:
+            encrypt = CK_FALSE;
+            recover = CK_FALSE;
+            wrap = CK_FALSE;
+            sign = CK_TRUE;
+            break;
+    }
+
+    /* If the following attributes have not been provided, set defaults */
+    /* CKA_SENSITIVE defaults false, but that happens for us anyway */
+
+    if (TemplateHasAttribute(CKA_EXTRACTABLE, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_EXTRACTABLE, &trueVal,
+                sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_DECRYPT, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_DECRYPT, &encrypt, sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_SIGN, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_SIGN, &sign, sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_SIGN_RECOVER, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_SIGN_RECOVER, &recover,
+                sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_UNWRAP, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_UNWRAP, &wrap, sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    if (TemplateHasAttribute(CKA_DERIVE, pTemplate, ulCount) != CKR_OK) {
+        ret = WP11_Object_SetAttr(obj, CKA_DERIVE, &derive, sizeof(CK_BBOOL));
+        if (ret != CKR_OK)
+            return ret;
+    }
+
+    /* Next two are forced attributes */
+    ret = WP11_Object_SetAttr(obj, CKA_ALWAYS_SENSITIVE, &falseVal,
+            sizeof(CK_BBOOL));
+    if (ret != CKR_OK)
+        return ret;
+
+    ret = WP11_Object_SetAttr(obj, CKA_NEVER_EXTRACTABLE, &falseVal,
+            sizeof(CK_BBOOL));
+
+    return ret;
+}
+
 /**
  * Set the values of the attributes into the object.
  *
@@ -331,6 +559,8 @@ static CK_RV SetAttributeValue(WP11_Session* session, WP11_Object* obj,
     int cnt;
     CK_KEY_TYPE type;
     CK_OBJECT_CLASS objClass;
+    CK_BBOOL getVar;
+    CK_ULONG getVarLen = 1;
 
     if (pTemplate == NULL)
         return CKR_ARGUMENTS_BAD;
@@ -434,6 +664,15 @@ static CK_RV SetAttributeValue(WP11_Session* session, WP11_Object* obj,
     /* Set remaining attributes - key specific attributes ignored. */
     for (i = 0; i < (int)ulCount; i++) {
         attr = &pTemplate[i];
+        /* Cannot change sensitive from true to false */
+        if (attr->type == CKA_SENSITIVE) {
+            rv = WP11_Object_GetAttr(obj, CKA_SENSITIVE, &getVar, &getVarLen);
+            if (rv != CKR_OK)
+                return rv;
+
+            if ((getVar == CK_TRUE) && (*(CK_BBOOL*)attr->pValue == CK_FALSE))
+                return CKR_ATTRIBUTE_READ_ONLY;
+        }
         ret = WP11_Object_SetAttr(obj, attr->type, (byte*)attr->pValue,
                                                               attr->ulValueLen);
         if (ret == BAD_FUNC_ARG)
@@ -482,6 +721,28 @@ static CK_RV NewObject(WP11_Session* session, CK_KEY_TYPE keyType,
     if (rv != CKR_OK) {
         WP11_Object_Free(obj);
         return rv;
+    }
+
+    if (WP11_Object_GetClass(obj) == CKO_PRIVATE_KEY) {
+        rv = SetAttributePrivateDefaults(obj, pTemplate, ulCount);
+        if (rv != CKR_OK) {
+            WP11_Object_Free(obj);
+            return rv;
+        }
+    }
+    else if (WP11_Object_GetClass(obj) == CKO_SECRET_KEY) {
+        rv = SetAttributeSecretDefaults(obj, pTemplate, ulCount);
+        if (rv != CKR_OK) {
+            WP11_Object_Free(obj);
+            return rv;
+        }
+    }
+    else if (WP11_Object_GetClass(obj) == CKO_PUBLIC_KEY) {
+        rv = SetAttributePublicDefaults(obj, pTemplate, ulCount);
+        if (rv != CKR_OK) {
+            WP11_Object_Free(obj);
+            return rv;
+        }
     }
 
     *object = obj;
@@ -985,11 +1246,13 @@ CK_RV C_GetAttributeValue(CK_SESSION_HANDLE hSession,
             return CKR_BUFFER_TOO_SMALL;
         else if (ret == NOT_AVAILABLE_E)
             return CK_UNAVAILABLE_INFORMATION;
+        else if (ret == CKR_ATTRIBUTE_SENSITIVE)
+            rv = ret;
         else if (ret != 0)
             return CKR_FUNCTION_FAILED;
     }
 
-    return CKR_OK;
+    return rv;
 }
 
 /**
@@ -4963,6 +5226,9 @@ CK_RV C_GenerateKey(CK_SESSION_HANDLE hSession,
     CK_RV rv;
     WP11_Session* session = NULL;
     WP11_Object* key = NULL;
+    CK_BBOOL trueVar = CK_TRUE;
+    CK_BBOOL getVar;
+    CK_ULONG getVarLen = sizeof(CK_BBOOL);
 
     if (!WP11_Library_IsInitialized())
         return CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -5001,6 +5267,21 @@ CK_RV C_GenerateKey(CK_SESSION_HANDLE hSession,
             (void)ret;
             (void)ulCount;
             return CKR_MECHANISM_INVALID;
+    }
+
+    if (rv == CKR_OK) {
+        rv = WP11_Object_GetAttr(key, CKA_SENSITIVE, &getVar, &getVarLen);
+        if ((rv == CKR_OK) && (getVar == CK_TRUE)) {
+            rv = WP11_Object_SetAttr(key, CKA_ALWAYS_SENSITIVE, &trueVar,
+                                     sizeof(CK_BBOOL));
+        }
+        if (rv == CKR_OK) {
+            rv = WP11_Object_GetAttr(key, CKA_EXTRACTABLE, &getVar, &getVarLen);
+            if ((rv == CKR_OK) && (getVar == CK_FALSE)) {
+                rv = WP11_Object_SetAttr(key, CKA_NEVER_EXTRACTABLE, &trueVar,
+                                     sizeof(CK_BBOOL));
+            }
+        }
     }
 
     return rv;
@@ -5051,6 +5332,9 @@ CK_RV C_GenerateKeyPair(CK_SESSION_HANDLE hSession,
     WP11_Session* session = NULL;
     WP11_Object* pub = NULL;
     WP11_Object* priv = NULL;
+    CK_BBOOL getVar;
+    CK_BBOOL trueVar = CK_TRUE;
+    CK_ULONG getVarLen = sizeof(CK_BBOOL);
 
     if (!WP11_Library_IsInitialized())
         return CKR_CRYPTOKI_NOT_INITIALIZED;
@@ -5166,6 +5450,35 @@ CK_RV C_GenerateKeyPair(CK_SESSION_HANDLE hSession,
     if (rv == CKR_OK) {
         rv = AddObject(session, priv, pPrivateKeyTemplate,
                                       ulPrivateKeyAttributeCount, phPrivateKey);
+    }
+
+    if (rv == CKR_OK) {
+        rv = WP11_Object_GetAttr(pub, CKA_SENSITIVE, &getVar, &getVarLen);
+        if ((rv == CKR_OK) && (getVar == CK_TRUE)) {
+            rv = WP11_Object_SetAttr(pub, CKA_ALWAYS_SENSITIVE, &trueVar,
+                                     sizeof(CK_BBOOL));
+        }
+        if (rv == CKR_OK) {
+            rv = WP11_Object_GetAttr(pub, CKA_EXTRACTABLE, &getVar, &getVarLen);
+            if ((rv == CKR_OK) && (getVar == CK_FALSE)) {
+                rv = WP11_Object_SetAttr(pub, CKA_NEVER_EXTRACTABLE, &trueVar,
+                                     sizeof(CK_BBOOL));
+            }
+        }
+        if (rv == CKR_OK) {
+            rv = WP11_Object_GetAttr(priv, CKA_SENSITIVE, &getVar, &getVarLen);
+            if ((rv == CKR_OK) && (getVar == CK_TRUE)) {
+                rv = WP11_Object_SetAttr(priv, CKA_ALWAYS_SENSITIVE, &trueVar,
+                                        sizeof(CK_BBOOL));
+            }
+        }
+        if (rv == CKR_OK) {
+            rv = WP11_Object_GetAttr(priv, CKA_EXTRACTABLE, &getVar, &getVarLen);
+            if ((rv == CKR_OK) && (getVar == CK_FALSE)) {
+                rv = WP11_Object_SetAttr(priv, CKA_NEVER_EXTRACTABLE, &trueVar,
+                                     sizeof(CK_BBOOL));
+            }
+        }
     }
 
     if (rv != CKR_OK && pub != NULL)
@@ -5569,6 +5882,9 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
     WP11_Session* session;
     WP11_Object* obj = NULL;
 #if defined(HAVE_ECC) || !defined(NO_DH)
+    CK_BBOOL getVar;
+    CK_BBOOL trueVar = CK_TRUE;
+    CK_ULONG getVarLen = sizeof(CK_BBOOL);
     byte* derivedKey = NULL;
     word32 keyLen;
     word32 symmKeyLen;
@@ -5686,6 +6002,21 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
                     rv = AddObject(session, obj, pTemplate, ulAttributeCount,
                                                                          phKey);
                 }
+            }
+        }
+    }
+
+    if (rv == CKR_OK) {
+        rv = WP11_Object_GetAttr(obj, CKA_SENSITIVE, &getVar, &getVarLen);
+        if ((rv == CKR_OK) && (getVar == CK_TRUE)) {
+            rv = WP11_Object_SetAttr(obj, CKA_ALWAYS_SENSITIVE, &trueVar,
+                                     sizeof(CK_BBOOL));
+        }
+        if (rv == CKR_OK) {
+            rv = WP11_Object_GetAttr(obj, CKA_EXTRACTABLE, &getVar, &getVarLen);
+            if ((rv == CKR_OK) && (getVar == CK_FALSE)) {
+                rv = WP11_Object_SetAttr(obj, CKA_NEVER_EXTRACTABLE, &trueVar,
+                                     sizeof(CK_BBOOL));
             }
         }
     }
