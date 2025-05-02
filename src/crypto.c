@@ -41,6 +41,8 @@
 #define ATTR_TYPE_DATA         2
 #define ATTR_TYPE_DATE         3
 
+#define PRF_KEY_SIZE            48
+
 #define CHECK_KEYTYPE(kt) \
    (kt == CKK_RSA || kt == CKK_EC || kt == CKK_DH || \
     kt == CKK_AES || kt == CKK_HKDF || kt == CKK_GENERIC_SECRET) ? \
@@ -5970,6 +5972,40 @@ static int SymmKeyLen(WP11_Object* obj, word32 len, word32* symmKeyLen)
 }
 #endif
 
+static int SetKeyExtract(WP11_Session* session, byte* ptr, CK_ULONG length,
+                         CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulAttributeCount,
+                         CK_OBJECT_HANDLE* handle)
+{
+    WP11_Object* secret = NULL;
+    int ret;
+    word32 symmKeyLen;
+    unsigned char* secretKeyData[2] = { NULL, NULL };
+    CK_ULONG secretKeyLen[2] = { 0, 0 };
+
+    if (length == 0)
+        return CKR_OK;
+
+    ret = CreateObject(session, pTemplate, ulAttributeCount, &secret);
+    if (ret != 0)
+        return CKR_OBJECT_HANDLE_INVALID;
+
+    ret = SymmKeyLen(secret, length, &symmKeyLen);
+    if (ret == 0) {
+        /* Only use the bottom part of the secret for the key. */
+        secretKeyData[1] = ptr + (length - symmKeyLen);
+        secretKeyLen[1] = length;
+        ret = WP11_Object_SetSecretKey(secret, secretKeyData, secretKeyLen);
+        if (ret != CKR_OK)
+            return CKR_FUNCTION_FAILED;
+        ret = AddObject(session, secret, pTemplate, ulAttributeCount, handle);
+        if (ret != CKR_OK) {
+            return ret;
+        }
+    }
+
+    return ret;
+}
+
 /**
  * Generate a symmetric key into a new key object.
  *
@@ -6014,12 +6050,14 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
     unsigned char* secretKeyData[2] = { NULL, NULL };
     CK_ULONG secretKeyLen[2] = { 0, 0 };
 #endif
+    CK_TLS12_MASTER_KEY_DERIVE_PARAMS* prfParams;
+    CK_TLS12_KEY_MAT_PARAMS* tlsParams;
 
     if (!WP11_Library_IsInitialized())
         return CKR_CRYPTOKI_NOT_INITIALIZED;
     if (WP11_Session_Get(hSession, &session) != 0)
         return CKR_SESSION_HANDLE_INVALID;
-    if (pMechanism == NULL || pTemplate == NULL || phKey == NULL)
+    if (pMechanism == NULL || pTemplate == NULL)
         return CKR_ARGUMENTS_BAD;
 
     ret = WP11_Object_Find(session, hBaseKey, &obj);
@@ -6031,6 +6069,8 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
         case CKM_ECDH1_DERIVE: {
             CK_ECDH1_DERIVE_PARAMS* params;
 
+            if (phKey == NULL)
+                return CKR_ARGUMENTS_BAD;
             if (pMechanism->pParameter == NULL)
                 return CKR_MECHANISM_PARAM_INVALID;
             if (pMechanism->ulParameterLen != sizeof(CK_ECDH1_DERIVE_PARAMS))
@@ -6062,6 +6102,8 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
             CK_HKDF_PARAMS_PTR kdfParams;
             CK_ATTRIBUTE *lenAttr = NULL;
 
+            if (phKey == NULL)
+                return CKR_ARGUMENTS_BAD;
             if (pMechanism->pParameter == NULL)
                 return CKR_MECHANISM_PARAM_INVALID;
             if (pMechanism->ulParameterLen != sizeof(CK_HKDF_PARAMS))
@@ -6094,6 +6136,8 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
 #endif
 #ifndef NO_DH
         case CKM_DH_PKCS_DERIVE:
+            if (phKey == NULL)
+                return CKR_ARGUMENTS_BAD;
             if (pMechanism->pParameter == NULL)
                 return CKR_MECHANISM_PARAM_INVALID;
             if (pMechanism->ulParameterLen == 0)
@@ -6115,7 +6159,8 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
 #ifdef HAVE_AES_CBC
         case CKM_AES_CBC_ENCRYPT_DATA: {
             CK_AES_CBC_ENCRYPT_DATA_PARAMS* params;
-
+            if (phKey == NULL)
+                return CKR_ARGUMENTS_BAD;
             if (pMechanism->pParameter == NULL)
                 return CKR_MECHANISM_PARAM_INVALID;
             if (pMechanism->ulParameterLen !=
@@ -6138,6 +6183,71 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
         }
 #endif
 #endif
+        case CKM_TLS12_KEY_AND_MAC_DERIVE:
+            if (pMechanism->pParameter == NULL)
+                return CKR_MECHANISM_PARAM_INVALID;
+            if (pMechanism->ulParameterLen !=
+                sizeof(CK_TLS12_KEY_MAT_PARAMS))
+                return CKR_MECHANISM_PARAM_INVALID;
+            tlsParams = (CK_TLS12_KEY_MAT_PARAMS*)
+                pMechanism->pParameter;
+            if (tlsParams->pReturnedKeyMaterial == NULL)
+                return CKR_MECHANISM_PARAM_INVALID;
+
+            keyLen = (2 * tlsParams->ulMacSizeInBits) +
+                     (2 * tlsParams->ulKeySizeInBits) +
+                     (2 * tlsParams->ulIVSizeInBits);
+            if (keyLen == 0)
+                return CKR_MECHANISM_PARAM_INVALID;
+            if ((keyLen % 8) != 0)
+                return CKR_MECHANISM_PARAM_INVALID;
+            keyLen /= 8;
+
+            derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+            if (derivedKey == NULL)
+                return CKR_DEVICE_MEMORY;
+            ret = WP11_Tls12_Master_Key_Derive(&tlsParams->RandomInfo,
+                                               tlsParams->prfHashMechanism,
+                                               "key expansion", 13,
+                                               derivedKey, keyLen, obj);
+            if (ret != 0)
+                rv = CKR_FUNCTION_FAILED;
+            break;
+        case CKM_TLS12_MASTER_KEY_DERIVE:
+        case CKM_TLS12_MASTER_KEY_DERIVE_DH:
+            if (phKey == NULL)
+                return CKR_ARGUMENTS_BAD;
+            if (pMechanism->pParameter == NULL)
+                return CKR_MECHANISM_PARAM_INVALID;
+            if (pMechanism->ulParameterLen !=
+                sizeof(CK_TLS12_MASTER_KEY_DERIVE_PARAMS))
+                return CKR_MECHANISM_PARAM_INVALID;
+            prfParams = (CK_TLS12_MASTER_KEY_DERIVE_PARAMS*)
+                pMechanism->pParameter;
+            if (prfParams->RandomInfo.pClientRandom == NULL ||
+                prfParams->RandomInfo.pServerRandom == NULL)
+                return CKR_MECHANISM_PARAM_INVALID;
+
+            if (pMechanism->mechanism == CKM_TLS12_MASTER_KEY_DERIVE) {
+                if (prfParams->pVersion == NULL)
+                    return CKR_MECHANISM_PARAM_INVALID;
+                if ((prfParams->pVersion->major != 3) ||
+                    (prfParams->pVersion->minor != 3))
+                    return CKR_MECHANISM_INVALID;
+            }
+
+            keyLen = PRF_KEY_SIZE;
+            derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+            if (derivedKey == NULL)
+                return CKR_DEVICE_MEMORY;
+
+            ret = WP11_Tls12_Master_Key_Derive(&prfParams->RandomInfo,
+                                               prfParams->prfHashMechanism,
+                                               "master secret", 13,
+                                               derivedKey, keyLen, obj);
+            if (ret != 0)
+                rv = CKR_FUNCTION_FAILED;
+            break;
         default:
             (void)ulAttributeCount;
             return CKR_MECHANISM_INVALID;
@@ -6146,20 +6256,74 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
 #if defined(HAVE_ECC) || !defined(NO_DH) || defined(HAVE_HKDF) || \
     (!defined(NO_AES) && defined(HAVE_AES_CBC))
     if (ret == 0) {
-        rv = CreateObject(session, pTemplate, ulAttributeCount, &obj);
-        if (rv == CKR_OK) {
-            ret = SymmKeyLen(obj, keyLen, &symmKeyLen);
-            if (ret == 0) {
-                /* Only use the bottom part of the secret for the key. */
-                secretKeyData[1] = derivedKey + (keyLen - symmKeyLen);
-                secretKeyLen[1] = keyLen;
-                ret = WP11_Object_SetSecretKey(obj, secretKeyData,
-                                                                  secretKeyLen);
-                if (ret != 0)
-                    rv = CKR_FUNCTION_FAILED;
+        if (pMechanism->mechanism == CKM_TLS12_KEY_AND_MAC_DERIVE) {
+            unsigned char* ptr = derivedKey;
+            /* Client MAC key */
+            CK_ULONG length = tlsParams->ulMacSizeInBits / 8;
+            ret = SetKeyExtract(session, ptr, length, pTemplate,
+                    ulAttributeCount,
+                    &tlsParams->pReturnedKeyMaterial->hClientMacSecret);
+            if (ret != CKR_OK) {
+                XFREE(derivedKey, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+                return ret;
+            }
+            ptr += length;
+            /* Server MAC key */
+            ret = SetKeyExtract(session, ptr, length, pTemplate,
+                    ulAttributeCount,
+                    &tlsParams->pReturnedKeyMaterial->hServerMacSecret);
+            if (ret != CKR_OK) {
+                XFREE(derivedKey, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+                return ret;
+            }
+            ptr += length;
+            /* Client key */
+            length = tlsParams->ulKeySizeInBits / 8;
+            ret = SetKeyExtract(session, ptr, length, pTemplate,
+                    ulAttributeCount,
+                    &tlsParams->pReturnedKeyMaterial->hClientKey);
+            if (ret != CKR_OK) {
+                XFREE(derivedKey, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+                return ret;
+            }
+            ptr += length;
+            /* Server key */
+            ret = SetKeyExtract(session, ptr, length, pTemplate,
+                    ulAttributeCount,
+                    &tlsParams->pReturnedKeyMaterial->hServerKey);
+            if (ret != CKR_OK) {
+                XFREE(derivedKey, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+                return ret;
+            }
+            ptr += length;
+            /* Client IV */
+            length = tlsParams->ulIVSizeInBits / 8;
+            if (tlsParams->pReturnedKeyMaterial->pIVClient != NULL) {
+                XMEMCPY(tlsParams->pReturnedKeyMaterial->pIVClient, ptr,
+                        length);
+            }
+            ptr += length;
+            if (tlsParams->pReturnedKeyMaterial->pIVServer != NULL) {
+                XMEMCPY(tlsParams->pReturnedKeyMaterial->pIVServer, ptr,
+                        length);
+            }
+        }
+        else {
+            rv = CreateObject(session, pTemplate, ulAttributeCount, &obj);
+            if (rv == CKR_OK) {
+                ret = SymmKeyLen(obj, keyLen, &symmKeyLen);
                 if (ret == 0) {
-                    rv = AddObject(session, obj, pTemplate, ulAttributeCount,
-                                                                         phKey);
+                    /* Only use the bottom part of the secret for the key. */
+                    secretKeyData[1] = derivedKey + (keyLen - symmKeyLen);
+                    secretKeyLen[1] = keyLen;
+                    ret = WP11_Object_SetSecretKey(obj, secretKeyData,
+                                                   secretKeyLen);
+                    if (ret != 0)
+                        rv = CKR_FUNCTION_FAILED;
+                    if (ret == 0) {
+                        rv = AddObject(session, obj, pTemplate,
+                                       ulAttributeCount, phKey);
+                    }
                 }
             }
         }
