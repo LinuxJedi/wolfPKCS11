@@ -72,11 +72,19 @@ extern "C" {
 
 /* Maximum number of sessions allocated per slot/token. */
 #ifndef WP11_SESSION_CNT_MAX
+#ifdef WOLFPKCS11_NSS
+#define WP11_SESSION_CNT_MAX           1
+#else
 #define WP11_SESSION_CNT_MAX           70
+#endif
 #endif
 /* Minimum number of sessions allocated per slot/token. */
 #ifndef WP11_SESSION_CNT_MIN
+#ifdef WOLFPKCS11_NSS
+#define WP11_SESSION_CNT_MIN           1
+#else
 #define WP11_SESSION_CNT_MIN           2
+#endif
 #endif
 
 /* Session was opened read-only or read/write. */
@@ -209,7 +217,11 @@ extern "C" {
 
 /* PIN length constraints. */
 #ifndef WP11_MIN_PIN_LEN
+#ifdef WOLFPKCS11_NSS
+#define WP11_MIN_PIN_LEN               0
+#else
 #define WP11_MIN_PIN_LEN               4
+#endif
 #endif
 #ifndef WP11_MAX_PIN_LEN
 #define WP11_MAX_PIN_LEN               32
@@ -267,7 +279,8 @@ void WP11_Slot_CloseSessions(WP11_Slot* slot);
 int WP11_Slot_HasSession(WP11_Slot* slot);
 int WP11_Slot_CheckSOPin(WP11_Slot* slot, char* pin, int pinLen);
 int WP11_Slot_CheckUserPin(WP11_Slot* slot, char* pin, int pinLen);
-int WP11_Slot_SOLogin(WP11_Slot* slot, char* pin, int pinLen);
+int WP11_Slot_SOLogin(WP11_Slot* slot, WP11_Session* session, char* pin,
+                      int pinLen);
 int WP11_Slot_UserLogin(WP11_Slot* slot, char* pin, int pinLen);
 void WP11_Slot_Logout(WP11_Slot* slot);
 int WP11_Slot_SetSOPin(WP11_Slot* slot, char* pin, int pinLen);

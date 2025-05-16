@@ -4408,7 +4408,11 @@ int WP11_Slot_CheckSOPin(WP11_Slot* slot, char* pin, int pinLen)
 
     WP11_Lock_LockRO(&slot->lock);
     token = &slot->token;
-    if (token->state != WP11_TOKEN_STATE_INITIALIZED || token->soPinLen == 0)
+    /* Pin not set and no pin provided is valid */
+    if (token->soPinLen == 0 && pinLen == 0)
+        ret = 0;
+    else if (token->state != WP11_TOKEN_STATE_INITIALIZED ||
+             token->soPinLen == 0)
         ret = PIN_NOT_SET_E;
     if (ret == 0) {
         WP11_Lock_UnlockRO(&slot->lock);
@@ -4469,6 +4473,7 @@ int WP11_Slot_CheckUserPin(WP11_Slot* slot, char* pin, int pinLen)
  * Log the SO (Security Officer) into the token.
  *
  * @param  slot    [in]  Slot object.
+ * @param  session [in]  Session object.
  * @param  pin     [in]  PIN to use to login.
  * @param  pinLen  [in]  Length of PIN.
  * @return  READ_ONLY_E when there is a read-only session open.
@@ -4477,7 +4482,8 @@ int WP11_Slot_CheckUserPin(WP11_Slot* slot, char* pin, int pinLen)
  *          Other -ve value when hashing PIN fails.
  *          0 on success.
  */
-int WP11_Slot_SOLogin(WP11_Slot* slot, char* pin, int pinLen)
+int WP11_Slot_SOLogin(WP11_Slot* slot, WP11_Session* session, char* pin,
+                      int pinLen)
 {
     int ret = 0;
     WP11_Session* curr;
@@ -4516,6 +4522,8 @@ int WP11_Slot_SOLogin(WP11_Slot* slot, char* pin, int pinLen)
 #endif
     if (ret == 0) {
         for (curr = slot->session; curr != NULL; curr = curr->next) {
+            if (curr == session)
+                continue;
             if (curr->inUse == WP11_SESSION_RO)
                 break;
         }
@@ -4542,6 +4550,7 @@ int WP11_Slot_SOLogin(WP11_Slot* slot, char* pin, int pinLen)
             slot->token.soFailedLogin = 0;
             slot->token.soLastFailedLogin = 0;
             slot->token.soFailLoginTimeout = 0;
+            session->inUse = WP11_SESSION_RW;
         }
         WP11_Lock_UnlockRW(&slot->lock);
     }

@@ -406,11 +406,7 @@ static CK_RV test_no_token_init(void* args)
     CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
     CK_RV ret;
     CK_TOKEN_INFO tokenInfo;
-#ifdef WOLFPKCS11_NSS
-    CK_FLAGS expFlags = CKF_RNG | CKF_CLOCK_ON_TOKEN;
-#else
     CK_FLAGS expFlags = CKF_RNG | CKF_CLOCK_ON_TOKEN | CKF_LOGIN_REQUIRED;
-#endif
     int flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
 
     session = CK_INVALID_HANDLE;
@@ -594,12 +590,8 @@ static CK_RV test_token(void* args)
     CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
     CK_RV ret;
     CK_TOKEN_INFO tokenInfo;
-#ifdef WOLFPKCS11_NSS
-    CK_FLAGS expFlags = CKF_RNG | CKF_CLOCK_ON_TOKEN | CKF_TOKEN_INITIALIZED;
-#else
     CK_FLAGS expFlags = CKF_RNG | CKF_CLOCK_ON_TOKEN | CKF_LOGIN_REQUIRED |
                         CKF_TOKEN_INITIALIZED;
-#endif
     unsigned char label[32];
     int flags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
 
@@ -899,13 +891,8 @@ static CK_RV test_login_logout(void* args)
     int roFlags = CKF_SERIAL_SESSION;
     CK_OBJECT_HANDLE roSession;
     CK_TOKEN_INFO tokenInfo;
-#ifdef WOLFPKCS11_NSS
-    CK_FLAGS expFlags = CKF_RNG | CKF_CLOCK_ON_TOKEN |
-                        CKF_TOKEN_INITIALIZED | CKF_USER_PIN_INITIALIZED;
-#else
     CK_FLAGS expFlags = CKF_RNG | CKF_CLOCK_ON_TOKEN | CKF_LOGIN_REQUIRED |
                         CKF_TOKEN_INITIALIZED | CKF_USER_PIN_INITIALIZED;
-#endif
 
     funcList->C_Logout(session);
 
