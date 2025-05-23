@@ -3743,6 +3743,7 @@ static CK_RV test_rsa_no_modulus(void* args)
     CK_BBOOL extractable = CK_TRUE;
     CK_OBJECT_HANDLE hTest = CK_INVALID_HANDLE;
     int sessFlags = CKF_SERIAL_SESSION | CKF_RW_SESSION;
+    unsigned char label[32];
 
     CK_ATTRIBUTE rsa_2048_priv_key[] = {
         { CKA_CLASS,             &privKeyClass,     sizeof(privKeyClass)      },
@@ -3761,6 +3762,11 @@ static CK_RV test_rsa_no_modulus(void* args)
     };
     int cnt = sizeof(rsa_2048_priv_key)/sizeof(*rsa_2048_priv_key);
 
+    unsigned char modulus[2048/8];
+    CK_ATTRIBUTE rsaGetTmpl[] = {
+        { CKA_MODULUS,             modulus,             sizeof(modulus)       },
+    };
+    CK_ULONG rsaGetTmplCnt = sizeof(rsaGetTmpl) / sizeof(*rsaGetTmpl);
 
     ret = funcList->C_CreateObject(session, rsa_2048_priv_key, cnt, &hTest);
 
@@ -3769,6 +3775,15 @@ static CK_RV test_rsa_no_modulus(void* args)
     if ((ret == CKR_OK) && (userPinLen != 0)) {
         funcList->C_Logout(session);
         funcList->C_CloseSession(session);
+
+        XMEMSET(label, ' ', sizeof(label));
+        XMEMCPY(label, tokenName, XSTRLEN(tokenName));
+
+        ret = funcList->C_Initialize(NULL);
+        CHECK_CKR(ret, "Init Token");
+    }
+
+    if (ret == CKR_OK) {
         ret = funcList->C_OpenSession(slot, sessFlags, NULL, NULL, &session);
         CHECK_CKR(ret, "Open Session");
     }
@@ -3777,6 +3792,16 @@ static CK_RV test_rsa_no_modulus(void* args)
     if (ret == CKR_OK && userPinLen != 0) {
         ret = funcList->C_Login(session, CKU_USER, userPin, userPinLen);
         CHECK_CKR(ret, "Login");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_GetAttributeValue(session, hTest, rsaGetTmpl,
+                                            rsaGetTmplCnt);
+        CHECK_CKR(ret, "Get Attributes RSA Modulus");
+    }
+
+    if (ret == CKR_OK) {
+        CHECK_COND(XMEMCMP(modulus, rsa_2048_modulus, sizeof(rsa_2048_modulus)) == 0, ret, "Modulus compare fail");
     }
 
     funcList->C_DestroyObject(session, hTest);
