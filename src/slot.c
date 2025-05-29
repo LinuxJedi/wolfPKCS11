@@ -153,6 +153,9 @@ CK_RV C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
     WP11_Slot_GetTokenLabel(slot, (char*)pInfo->label);
     pInfo->serialNumber[14] = ((slotID / 10) % 10) + '0';
     pInfo->serialNumber[15] = ((slotID /  1) % 10) + '0';
+    if (WP11_Slot_Has_Empty_Pin(slot)) {
+        pInfo->flags &= ~(CKF_LOGIN_REQUIRED);
+    }
 
 #ifndef WOLFPKCS11_NO_TIME
     now = XTIME(0);

@@ -233,6 +233,8 @@ struct WP11_Object {
     int issuerLen;                     /* Length of certificate issuer        */
     unsigned char* serial;             /* Certificate serial number           */
     int serialLen;                     /* Length of certificate serial number */
+    unsigned char* subject;            /* Certificate subject                 */
+    int subjectLen;                    /* Length of certificate subject       */
 
     WP11_Lock* lock;                   /* Object specific lock                */
 
@@ -435,6 +437,7 @@ typedef struct WP11_Token {
     int loginState;                    /* Login state of the token            */
     WP11_Object* object;               /* Linked list of token objects        */
     int objCnt;                        /* Count of objects on token           */
+    int tokenFlags;                    /* Flags for the token state           */
 } WP11_Token;
 
 struct WP11_Slot {
@@ -681,6 +684,18 @@ static int wp11_Slot_AddSession(WP11_Slot* slot, WP11_Session** session)
     return ret;
 }
 
+int WP11_Slot_Has_Empty_Pin(WP11_Slot* slot)
+{
+    if (slot == NULL)
+        return 0;
+
+    if ((slot->token.tokenFlags & WP11_TOKEN_FLAG_USER_PIN_SET) &&
+        (WP11_Slot_CheckUserPin(slot, (char*)"", 0) == 0))
+        return 1;
+
+    return 0;
+}
+
 /**
  * Finalize a session - clean-up but don't clear out.
  *
@@ -803,6 +818,7 @@ static int wolfPKCS11_Store_GetMaxSize(int type, int variableSz)
                 FIELD_SIZE(WP11_Token, userFailLoginTimeout) +
                 FIELD_SIZE(WP11_Token, seed) +
                 FIELD_SIZE(WP11_Token, objCnt) +
+                FIELD_SIZE(WP11_Token, tokenFlags) +
                 variableSz /* soPinLen + userPinLen + (objCnt * long) */
             ;
             break;
@@ -820,7 +836,10 @@ static int wolfPKCS11_Store_GetMaxSize(int type, int variableSz)
                 FIELD_SIZE(WP11_Object, endDate) +
                 sizeof(word32) + /* keyIdLenSz */
                 sizeof(word32) + /* labelLen */
-                variableSz /* keyIdLen + labelLen */
+                sizeof(word32) + /* issuerLen */
+                sizeof(word32) + /* serialLen */
+                sizeof(word32) + /* subjectLen */
+                variableSz /* keyIdLen + labelLen + issuerLen + serialLen + subjectLen */
             ;
             break;
         case WOLFPKCS11_STORE_SYMMKEY:
@@ -831,6 +850,7 @@ static int wolfPKCS11_Store_GetMaxSize(int type, int variableSz)
         case WOLFPKCS11_STORE_DHKEY_PRIV:
         case WOLFPKCS11_STORE_DHKEY_PUB:
         case WOLFPKCS11_STORE_CERT:
+        case WOLFPKCS11_STORE_TRUST:
             maxSz = sizeof(word32) + variableSz;
             break;
 
@@ -1000,6 +1020,10 @@ int wolfPKCS11_Store_OpenSz(int type, CK_ULONG id1, CK_ULONG id2, int read,
         case WOLFPKCS11_STORE_CERT:
             XSNPRINTF(name, sizeof(name), "%s/wp11_cert_%016lx_%016lx",
                       str, id1, id2);
+            break;
+        case WOLFPKCS11_STORE_TRUST:
+            XSNPRINTF(name, sizeof(name), "%s/wp11_trust_%016lx_%016lx",
+                        str, id1, id2);
             break;
         default:
             ret = -1;
@@ -1785,6 +1809,31 @@ static int wp11_DecryptData(byte* out, byte* data, int len, byte* key,
 }
 
 /**
+ * "Decode" the certificate.
+ *
+ * Certificates are not encrypted.
+ *
+ * @param [in, out]  object  Certificate object.
+ */
+static void wp11_Object_Decode_Cert(WP11_Object* object)
+{
+    if (object->data.cert.data == NULL) {
+        object->data.cert.data = object->keyData;
+        object->data.cert.len = object->keyDataLen;
+    }
+    object->encoded = 0;
+}
+
+#ifdef WOLFPKCS11_NSS
+static void wp11_Object_Decode_Trust(WP11_Object* object)
+{
+    XMEMCPY((unsigned char*)&object->data.trust, object->keyData,
+        object->keyDataLen);
+    object->encoded = 0;
+}
+#endif
+
+/**
  * Load a certificate from storage.
  *
  * @param [in, out]  object   Certificate object.
@@ -1808,10 +1857,33 @@ static int wp11_Object_Load_Cert(WP11_Object* object, int tokenId, int objId)
         ret = wp11_storage_read_alloc_array(storage, &object->keyData,
             &object->keyDataLen);
         wp11_storage_close(storage);
+        /* Decode without login needed */
+        wp11_Object_Decode_Cert(object);
     }
 
     return ret;
 }
+
+#ifdef WOLFPKCS11_NSS
+static int wp11_Object_Load_Trust(WP11_Object* object, int tokenId, int objId)
+{
+    int ret;
+    void* storage = NULL;
+
+    /* Open access to trust. */
+    ret = wp11_storage_open_readonly(WOLFPKCS11_STORE_TRUST, tokenId, objId,
+        &storage);
+    if (ret == 0) {
+        /* Read trust. */
+        ret = wp11_storage_read_alloc_array(storage, &object->keyData,
+            &object->keyDataLen);
+        wp11_storage_close(storage);
+        wp11_Object_Decode_Trust(object);
+    }
+
+    return ret;
+}
+#endif
 
 #ifdef WOLFSSL_MAXQ10XX_CRYPTO
 #ifdef MAXQ10XX_PRODUCTION_KEY
@@ -2120,21 +2192,25 @@ exit:
     return ret;
 }
 
-/**
- * "Decode" the certificate.
- *
- * Certificates are not encrypted.
- *
- * @param [in, out]  object  Certificate object.
- */
-static void wp11_Object_Decode_Cert(WP11_Object* object)
+#ifdef WOLFPKCS11_NSS
+static int wp11_Object_Store_Trust(WP11_Object* object, int tokenId, int objId)
 {
-    if (object->data.cert.data == NULL) {
-        object->data.cert.data = object->keyData;
-        object->data.cert.len = object->keyDataLen;
+    int ret;
+    void* storage = NULL;
+
+    /* Open access to trust. */
+    ret = wp11_storage_open(WOLFPKCS11_STORE_TRUST, tokenId, objId,
+        sizeof(WP11_Trust), &storage);
+    if (ret == 0) {
+        /* Write trust to storage. */
+        ret = wp11_storage_write_array(storage,
+            (unsigned char*)&object->data.trust, sizeof(WP11_Trust));
+        wp11_storage_close(storage);
     }
-    object->encoded = 0;
+
+    return ret;
 }
+#endif /* WOLFPKCS11_NSS */
 
 #ifndef NO_RSA
 /**
@@ -3167,6 +3243,21 @@ static int wp11_Object_Load_Object(WP11_Object* object, int tokenId, int objId)
             ret = wp11_storage_read_alloc_array(storage, &object->label,
                                                 &object->labelLen);
         }
+        if (ret == 0) {
+            /* Read issuer of the object. (variable issuerLen) */
+            ret = wp11_storage_read_alloc_array(storage, &object->issuer,
+                                                &object->issuerLen);
+        }
+        if (ret == 0) {
+            /* Read serial number of the object. (variable serialLen) */
+            ret = wp11_storage_read_alloc_array(storage, &object->serial,
+                                                &object->serialLen);
+        }
+        if (ret == 0) {
+            /* Read subject of the object. (variable subjectLen) */
+            ret = wp11_storage_read_alloc_array(storage, &object->subject,
+                                                &object->subjectLen);
+        }
 
         wp11_storage_close(storage);
     }
@@ -3193,6 +3284,11 @@ static int wp11_Object_Load(WP11_Object* object, int tokenId, int objId)
         if (object->objClass == CKO_CERTIFICATE) {
             ret = wp11_Object_Load_Cert(object, tokenId, objId);
         }
+#ifdef WOLFPKCS11_NSS
+        else if(object->objClass == CKO_NSS_TRUST) {
+            ret = wp11_Object_Load_Trust(object, tokenId, objId);
+        }
+#endif
         else {
             /* Load separate key data. */
             switch (object->type) {
@@ -3231,7 +3327,8 @@ static int wp11_Object_Store_Object(WP11_Object* object, int tokenId, int objId)
     int ret;
     void* storage = NULL;
     word32 dummy = 0;
-    int variableSz = (object->keyIdLen + object->labelLen);
+    int variableSz = (object->keyIdLen + object->labelLen +
+        object->issuerLen + object->serialLen + object->subjectLen);
 
     /* Open access to key object. */
     ret = wp11_storage_open(WOLFPKCS11_STORE_OBJECT, tokenId, objId, variableSz,
@@ -3290,6 +3387,26 @@ static int wp11_Object_Store_Object(WP11_Object* object, int tokenId, int objId)
                                                               object->labelLen);
         }
 
+        if (ret == 0) {
+            /* Write issuer of the object. (variable issuerLen) */
+            ret = wp11_storage_write_array(storage, object->issuer,
+                                           object->issuerLen);
+        }
+
+        if (ret == 0) {
+            /* Write serial number of the object. (variable serialLen) */
+            ret = wp11_storage_write_array(storage, object->serial,
+                                           object->serialLen);
+        }
+
+        if (ret == 0) {
+            /* Write the subject. (variable subjectLen) */
+            ret = wp11_storage_write_array(storage, object->subject,
+                                           object->subjectLen);
+        }
+
+        if (ret == 0)
+
         wp11_storage_close(storage);
     }
     return ret;
@@ -3325,6 +3442,11 @@ static int wp11_Object_Store(WP11_Object* object, int tokenId, int objId)
         if (object->objClass == CKO_CERTIFICATE) {
             ret = wp11_Object_Store_Cert(object, tokenId, objId);
         }
+#ifdef WOLFPKCS11_NSS
+        else if (object->objClass == CKO_NSS_TRUST) {
+            ret = wp11_Object_Store_Trust(object, tokenId, objId);
+        }
+#endif
         else {
             /* Store key data separately. */
             switch (object->type) {
@@ -3376,6 +3498,12 @@ static int wp11_Object_Decode(WP11_Object* object)
         wp11_Object_Decode_Cert(object);
         ret = 0;
     }
+#ifdef WOLFPKCS11_NSS
+    else if (object->objClass == CKO_NSS_TRUST) {
+        wp11_Object_Decode_Trust(object);
+        ret = 0;
+    }
+#endif
     else {
         switch (object->type) {
         #ifndef NO_RSA
@@ -3688,6 +3816,11 @@ static int wp11_Token_Load(WP11_Slot* slot, int tokenId, WP11_Token* token)
             }
         }
 
+        if (ret == 0) {
+            /* Read token flags. */
+            ret = wp11_storage_read_int(storage, &token->tokenFlags);
+        }
+
         wp11_storage_close(storage);
 
         object = token->object;
@@ -3700,6 +3833,17 @@ static int wp11_Token_Load(WP11_Slot* slot, int tokenId, WP11_Token* token)
         if (ret == 0) {
             /* Set to state of initialized. */
             token->state = WP11_TOKEN_STATE_INITIALIZED;
+        }
+
+        /* If there is no pin, there is no login, so decode now */
+        if (WP11_Slot_Has_Empty_Pin(slot)) {
+#ifndef WOLFPKCS11_NO_STORE
+            object = token->object;
+            while (ret == 0 && object != NULL) {
+                ret = wp11_Object_Decode(object);
+                object = object->next;
+            }
+#endif
         }
         if (ret != 0) {
             /* Failed to load - clear out any data and initialize. */
@@ -3802,6 +3946,11 @@ static int wp11_Token_Store(WP11_Token* token, int tokenId)
              * (variable objCnt * 8) */
             ret = wp11_storage_write_ulong(storage, object->type);
             object = object->next;
+        }
+
+        if (ret == 0) {
+            /* Write token flags. (4) */
+            ret = wp11_storage_write_int(storage, token->tokenFlags);
         }
 
         wp11_storage_close(storage);
@@ -4449,7 +4598,10 @@ int WP11_Slot_CheckUserPin(WP11_Slot* slot, char* pin, int pinLen)
 
     WP11_Lock_LockRO(&slot->lock);
     token = &slot->token;
-    if (token->state != WP11_TOKEN_STATE_INITIALIZED || token->userPinLen == 0)
+    if (pinLen == 0 && token->userPinLen == 0)
+        ret = 0;
+    else if (token->state != WP11_TOKEN_STATE_INITIALIZED ||
+             token->userPinLen == 0)
         ret = PIN_NOT_SET_E;
 
     if (ret == 0) {
@@ -4697,6 +4849,7 @@ int WP11_Slot_SetSOPin(WP11_Slot* slot, char* pin, int pinLen)
     }
     if (ret == 0) {
         token->soPinLen = sizeof(token->soPin);
+        token->tokenFlags |= WP11_TOKEN_FLAG_SO_PIN_SET;
     #ifndef WOLFPKCS11_NO_STORE
         ret = wp11_Token_Store(token, (int)slot->id);
     #endif
@@ -4750,6 +4903,7 @@ int WP11_Slot_SetUserPin(WP11_Slot* slot, char* pin, int pinLen)
     }
     if (ret == 0) {
         token->userPinLen = sizeof(token->userPin);
+        token->tokenFlags |= WP11_TOKEN_FLAG_USER_PIN_SET;
     #ifndef WOLFPKCS11_NO_STORE
         ret = wp11_Token_Store(token, (int)slot->id);
     #endif
@@ -4870,7 +5024,7 @@ time_t WP11_Slot_TokenFailedExpire(WP11_Slot* slot, int login)
  */
 int WP11_Slot_IsTokenUserPinInitialized(WP11_Slot* slot)
 {
-    return slot->token.userPinLen > 0;
+    return slot->token.tokenFlags & WP11_TOKEN_FLAG_USER_PIN_SET;
 }
 
 /**
@@ -5774,11 +5928,12 @@ static WP11_Object* wp11_Session_FindNext(WP11_Session* session, int onToken,
         }
    #endif
 
-        if ((ret->opFlag | WP11_FLAG_PRIVATE) == WP11_FLAG_PRIVATE) {
+        if ((ret->opFlag & WP11_FLAG_PRIVATE) == WP11_FLAG_PRIVATE) {
             if (!onToken)
                 WP11_Lock_LockRO(&session->slot->token.lock);
-            if (session->slot->token.loginState == WP11_APP_STATE_RW_PUBLIC ||
-                  session->slot->token.loginState == WP11_APP_STATE_RO_PUBLIC) {
+            if (!WP11_Slot_Has_Empty_Pin(session->slot) &&
+                (session->slot->token.loginState == WP11_APP_STATE_RW_PUBLIC ||
+                 session->slot->token.loginState == WP11_APP_STATE_RO_PUBLIC)) {
                 object = ret;
                 ret = NULL;
             }
@@ -7162,9 +7317,8 @@ int WP11_Object_GetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
             else
                 ret = CKR_ATTRIBUTE_TYPE_INVALID;
             break;
-
         case CKA_SUBJECT:
-            ret = NOT_AVAILABLE_E;
+            ret = GetData(object->subject, object->subjectLen, data, len);
             break;
 
         default:
@@ -7537,6 +7691,9 @@ int WP11_Object_SetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
                                       data, (int)len);
             break;
         case CKA_SUBJECT:
+            ret = WP11_Object_SetData(&object->subject, &object->subjectLen,
+                                      data, (int)len);
+            break;
         case CKA_AC_ISSUER:
         case CKA_ATTR_TYPES:
         case CKA_CERTIFICATE_CATEGORY:

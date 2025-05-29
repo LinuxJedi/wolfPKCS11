@@ -755,11 +755,13 @@ static CK_RV test_pin(void* args)
             if (ret == CKR_OK) {
                 ret = funcList->C_InitPIN(session, NULL, userPinLen);
                 CHECK_CKR_FAIL(ret, CKR_ARGUMENTS_BAD, "Init PIN no pin");
+#ifndef WOLFPKCS11_NSS
                 if (ret == CKR_OK) {
                     ret = funcList->C_InitPIN(session, userPin, 3);
                     CHECK_CKR_FAIL(ret, CKR_PIN_INCORRECT,
                                                       "Init PIN too short PIN");
                 }
+#endif
                 if (ret == CKR_OK) {
                     ret = funcList->C_InitPIN(session, userPin, 33);
                     CHECK_CKR_FAIL(ret, CKR_PIN_INCORRECT,
