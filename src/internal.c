@@ -847,7 +847,7 @@ static int wolfPKCS11_Store_GetMaxSize(int type, int variableSz)
                 sizeof(word32) + /* issuerLen */
                 sizeof(word32) + /* serialLen */
                 sizeof(word32) + /* subjectLen */
-                variableSz /* keyIdLen + labelLen + issuerLen + serialLen + issuerLen + serialLen + subjectLen */
+                variableSz /* keyIdLen + labelLen + issuerLen + serialLen + subjectLen */
             ;
             break;
         case WOLFPKCS11_STORE_SYMMKEY:
@@ -1029,6 +1029,11 @@ int wolfPKCS11_Store_OpenSz(int type, CK_ULONG id1, CK_ULONG id2, int read,
             XSNPRINTF(name, sizeof(name), "%s/wp11_cert_%016lx_%016lx",
                       str, id1, id2);
             break;
+        case WOLFPKCS11_STORE_TRUST:
+            XSNPRINTF(name, sizeof(name), "%s/wp11_trust_%016lx_%016lx",
+                      str, id1, id2);
+            break;
+
         default:
             ret = -1;
             break;
@@ -3323,7 +3328,7 @@ static int wp11_Object_Load(WP11_Object* object, int tokenId, int objId)
             ret = wp11_Object_Load_Cert(object, tokenId, objId);
         }
 #ifdef WOLFPKCS11_NSS
-        else if(object->objClass == CKO_NSS_TRUST) {
+        else if (object->objClass == CKO_NSS_TRUST) {
             ret = wp11_Object_Load_Trust(object, tokenId, objId);
         }
 #endif
@@ -4135,6 +4140,7 @@ static int wp11_Slot_Init(WP11_Slot* slot, int id)
     XMEMSET(slot, 0, sizeof(*slot));
     slot->id = id;
     slot->nextObjId = 1;
+    slot->token.state = WP11_TOKEN_STATE_UNKNOWN;
 
     ret = WP11_Lock_Init(&slot->lock);
     if (ret == 0) {
@@ -4149,7 +4155,6 @@ static int wp11_Slot_Init(WP11_Slot* slot, int id)
         }
         if (ret == 0) {
             ret = wp11_Token_Init(&slot->token, label);
-            slot->token.state = WP11_TOKEN_STATE_UNKNOWN;
         }
 
         if (ret != 0) {
@@ -4592,7 +4597,7 @@ int WP11_Slot_CheckSOPin(WP11_Slot* slot, char* pin, int pinLen)
     /* Pin not set and no pin provided is valid */
     if (token->state != WP11_TOKEN_STATE_INITIALIZED)
         ret = PIN_NOT_SET_E;
-    if (token->soPinLen == 0 && (token->tokenFlags & WP11_TOKEN_FLAG_SO_PIN_SET) == 0)
+    if (((token->tokenFlags & WP11_TOKEN_FLAG_SO_PIN_SET) == 0) && pinLen != 0)
         ret = PIN_NOT_SET_E;
     if (ret == 0) {
         WP11_Lock_UnlockRO(&slot->lock);
@@ -5957,8 +5962,9 @@ static WP11_Object* wp11_Session_FindNext(WP11_Session* session, int onToken,
         if ((ret->opFlag & WP11_FLAG_PRIVATE) == WP11_FLAG_PRIVATE) {
             if (!onToken)
                 WP11_Lock_LockRO(&session->slot->token.lock);
-            if (session->slot->token.loginState == WP11_APP_STATE_RW_PUBLIC ||
-                  session->slot->token.loginState == WP11_APP_STATE_RO_PUBLIC) {
+            if (!WP11_Slot_Has_Empty_Pin(session->slot) &&
+                (session->slot->token.loginState == WP11_APP_STATE_RW_PUBLIC ||
+                 session->slot->token.loginState == WP11_APP_STATE_RO_PUBLIC)) {
                 object = ret;
                 ret = NULL;
             }
@@ -6866,12 +6872,6 @@ static int GetTrustAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type,
             if (data != NULL)
                 ret = GetBool(object->data.trust.stepUpApproved, data, len);
             break;
-        case CKA_ISSUER:
-            ret = GetData(object->issuer, object->issuerLen, data, len);
-            break;
-        case CKA_SERIAL_NUMBER:
-            ret = GetData(object->serial, object->serialLen, data, len);
-            break;
         default:
             ret = NOT_AVAILABLE_E;
             break;
@@ -7235,6 +7235,12 @@ int WP11_Object_GetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
             break;
         case CKA_LABEL:
             ret = GetData(object->label, object->labelLen, data, len);
+            break;
+        case CKA_ISSUER:
+            ret = GetData(object->issuer, object->issuerLen, data, len);
+            break;
+        case CKA_SERIAL_NUMBER:
+            ret = GetData(object->serial, object->serialLen, data, len);
             break;
         case CKA_SUBJECT:
             ret = GetData(object->subject, object->subjectLen, data, len);
