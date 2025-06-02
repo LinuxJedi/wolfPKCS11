@@ -69,9 +69,6 @@ static CK_SLOT_INFO slotInfoTemplate = {
     "wolfSSL HSM slot ID xx",
     "wolfpkcs11",
     CKF_TOKEN_PRESENT
-#ifdef WOLFPKCS11_NSS
-    | CKF_USER_PIN_INITIALIZED
-#endif
     ,
     { WOLFPKCS11_MAJOR_VERSION, WOLFPKCS11_MINOR_VERSION },
     { WOLFPKCS11_MAJOR_VERSION, WOLFPKCS11_MINOR_VERSION }
@@ -168,7 +165,8 @@ CK_RV C_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
     WP11_Slot_GetTokenLabel(slot, (char*)pInfo->label);
     pInfo->serialNumber[14] = ((slotID / 10) % 10) + '0';
     pInfo->serialNumber[15] = ((slotID /  1) % 10) + '0';
-    if (WP11_Slot_Has_Empty_Pin(slot)) {
+    if (WP11_Slot_Has_Empty_Pin(slot) ||
+        !WP11_Slot_IsTokenUserPinInitialized(slot)) {
         pInfo->flags &= ~(CKF_LOGIN_REQUIRED);
     }
 
