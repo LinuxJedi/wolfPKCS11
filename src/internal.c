@@ -438,6 +438,7 @@ typedef struct WP11_Token {
     int loginState;                    /* Login state of the token            */
     WP11_Object* object;               /* Linked list of token objects        */
     int objCnt;                        /* Count of objects on token           */
+    int tokenFlags;                    /* Flags for token                     */
 } WP11_Token;
 
 struct WP11_Slot {
@@ -657,6 +658,25 @@ static int wp11_Session_New(WP11_Slot* slot, CK_OBJECT_HANDLE handle,
 }
 
 /**
+ * Check if the slot has an empty user PIN.
+ *
+ * @param  slot     [in]   Slot object.
+ * @return  1 if the slot has an empty user PIN.
+ *          0 if the slot does not have an empty user PIN.
+ */
+int WP11_Slot_Has_Empty_Pin(WP11_Slot* slot)
+{
+    if (slot == NULL)
+        return 0;
+
+    if ((slot->token.tokenFlags & WP11_TOKEN_FLAG_USER_PIN_SET) &&
+        (WP11_Slot_CheckUserPin(slot, (char*)"", 0) == 0))
+        return 1;
+
+    return 0;
+}
+
+/**
  * Add a new session to the token in the slot.
  *
  * @param  slot     [in]   Slot object.
@@ -806,6 +826,7 @@ static int wolfPKCS11_Store_GetMaxSize(int type, int variableSz)
                 FIELD_SIZE(WP11_Token, userFailLoginTimeout) +
                 FIELD_SIZE(WP11_Token, seed) +
                 FIELD_SIZE(WP11_Token, objCnt) +
+                FIELD_SIZE(WP11_Token, tokenFlags) +
                 variableSz /* soPinLen + userPinLen + (objCnt * long) */
             ;
             break;
@@ -3828,6 +3849,10 @@ static int wp11_Token_Load(WP11_Slot* slot, int tokenId, WP11_Token* token)
                 token->objCnt++;
             }
         }
+        if (ret == 0) {
+            /* Read token flags. */
+            ret = wp11_storage_read_int(storage, &token->tokenFlags);
+        }
 
         wp11_storage_close(storage);
 
@@ -3842,6 +3867,18 @@ static int wp11_Token_Load(WP11_Slot* slot, int tokenId, WP11_Token* token)
             /* Set to state of initialized. */
             token->state = WP11_TOKEN_STATE_INITIALIZED;
         }
+
+        /* If there is no pin, there is no login, so decode now */
+        if (WP11_Slot_Has_Empty_Pin(slot)) {
+#ifndef WOLFPKCS11_NO_STORE
+            object = token->object;
+            while (ret == 0 && object != NULL) {
+                ret = wp11_Object_Decode(object);
+                object = object->next;
+            }
+#endif
+        }
+
         if (ret != 0) {
             ret = CKR_DEVICE_ERROR;
         }
@@ -3940,6 +3977,11 @@ static int wp11_Token_Store(WP11_Token* token, int tokenId)
              * (variable objCnt * 8) */
             ret = wp11_storage_write_ulong(storage, object->type);
             object = object->next;
+        }
+
+        if (ret == 0) {
+            /* Write token flags. (4) */
+            ret = wp11_storage_write_int(storage, token->tokenFlags);
         }
 
         wp11_storage_close(storage);
@@ -4546,7 +4588,11 @@ int WP11_Slot_CheckSOPin(WP11_Slot* slot, char* pin, int pinLen)
 
     WP11_Lock_LockRO(&slot->lock);
     token = &slot->token;
-    if (token->state != WP11_TOKEN_STATE_INITIALIZED || token->soPinLen == 0)
+
+    /* Pin not set and no pin provided is valid */
+    if (token->state != WP11_TOKEN_STATE_INITIALIZED)
+        ret = PIN_NOT_SET_E;
+    if (token->soPinLen == 0 && (token->tokenFlags & WP11_TOKEN_FLAG_SO_PIN_SET) == 0)
         ret = PIN_NOT_SET_E;
     if (ret == 0) {
         WP11_Lock_UnlockRO(&slot->lock);
@@ -4583,7 +4629,10 @@ int WP11_Slot_CheckUserPin(WP11_Slot* slot, char* pin, int pinLen)
 
     WP11_Lock_LockRO(&slot->lock);
     token = &slot->token;
-    if (token->state != WP11_TOKEN_STATE_INITIALIZED || token->userPinLen == 0)
+    if (token->state != WP11_TOKEN_STATE_INITIALIZED)
+        ret = PIN_NOT_SET_E;
+    if (token->userPinLen == 0 &&
+        (token->tokenFlags & WP11_TOKEN_FLAG_USER_PIN_SET) == 0)
         ret = PIN_NOT_SET_E;
 
     if (ret == 0) {
@@ -4826,6 +4875,7 @@ int WP11_Slot_SetSOPin(WP11_Slot* slot, char* pin, int pinLen)
     }
     if (ret == 0) {
         token->soPinLen = sizeof(token->soPin);
+        token->tokenFlags |= WP11_TOKEN_FLAG_SO_PIN_SET;
     #ifndef WOLFPKCS11_NO_STORE
         ret = wp11_Token_Store(token, (int)slot->id);
     #endif
@@ -4879,6 +4929,7 @@ int WP11_Slot_SetUserPin(WP11_Slot* slot, char* pin, int pinLen)
     }
     if (ret == 0) {
         token->userPinLen = sizeof(token->userPin);
+        token->tokenFlags |= WP11_TOKEN_FLAG_USER_PIN_SET;
     #ifndef WOLFPKCS11_NO_STORE
         ret = wp11_Token_Store(token, (int)slot->id);
     #endif
@@ -4999,7 +5050,7 @@ time_t WP11_Slot_TokenFailedExpire(WP11_Slot* slot, int login)
  */
 int WP11_Slot_IsTokenUserPinInitialized(WP11_Slot* slot)
 {
-    return slot->token.userPinLen > 0;
+    return slot->token.tokenFlags & WP11_TOKEN_FLAG_USER_PIN_SET;
 }
 
 /**
