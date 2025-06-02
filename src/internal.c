@@ -847,7 +847,7 @@ static int wolfPKCS11_Store_GetMaxSize(int type, int variableSz)
                 sizeof(word32) + /* issuerLen */
                 sizeof(word32) + /* serialLen */
                 sizeof(word32) + /* subjectLen */
-                variableSz /* keyIdLen + labelLen + issuerLen + serialLen + issuerLen + serialLen + subjectLen */
+                variableSz /* keyIdLen + labelLen + issuerLen + serialLen +  subjectLen */
             ;
             break;
         case WOLFPKCS11_STORE_SYMMKEY:
@@ -1029,6 +1029,11 @@ int wolfPKCS11_Store_OpenSz(int type, CK_ULONG id1, CK_ULONG id2, int read,
             XSNPRINTF(name, sizeof(name), "%s/wp11_cert_%016lx_%016lx",
                       str, id1, id2);
             break;
+        case WOLFPKCS11_STORE_TRUST:
+            XSNPRINTF(name, sizeof(name), "%s/wp11_trust_%016lx_%016lx",
+                        str, id1, id2);
+            break;
+
         default:
             ret = -1;
             break;
@@ -4135,6 +4140,7 @@ static int wp11_Slot_Init(WP11_Slot* slot, int id)
     XMEMSET(slot, 0, sizeof(*slot));
     slot->id = id;
     slot->nextObjId = 1;
+    slot->token.state = WP11_TOKEN_STATE_UNKNOWN;
 
     ret = WP11_Lock_Init(&slot->lock);
     if (ret == 0) {
@@ -4149,7 +4155,6 @@ static int wp11_Slot_Init(WP11_Slot* slot, int id)
         }
         if (ret == 0) {
             ret = wp11_Token_Init(&slot->token, label);
-            slot->token.state = WP11_TOKEN_STATE_UNKNOWN;
         }
 
         if (ret != 0) {
@@ -4592,7 +4597,7 @@ int WP11_Slot_CheckSOPin(WP11_Slot* slot, char* pin, int pinLen)
     /* Pin not set and no pin provided is valid */
     if (token->state != WP11_TOKEN_STATE_INITIALIZED)
         ret = PIN_NOT_SET_E;
-    if (token->soPinLen == 0 && (token->tokenFlags & WP11_TOKEN_FLAG_SO_PIN_SET) == 0)
+    if (((token->tokenFlags & WP11_TOKEN_FLAG_SO_PIN_SET) == 0) && pinLen != 0)
         ret = PIN_NOT_SET_E;
     if (ret == 0) {
         WP11_Lock_UnlockRO(&slot->lock);
@@ -4631,9 +4636,16 @@ int WP11_Slot_CheckUserPin(WP11_Slot* slot, char* pin, int pinLen)
     token = &slot->token;
     if (token->state != WP11_TOKEN_STATE_INITIALIZED)
         ret = PIN_NOT_SET_E;
+
+#ifndef WOLFPKCS11_NSS
+    /* At the end of NSS's PK11_InitSlot(), NSS forces CKF_USER_PIN_INITIALIZED
+     * to be set even if the user PIN is not set. User logins will always fail.
+     * So, assume an empty PIN is set at first login for NSS.
+     */
     if (token->userPinLen == 0 &&
         (token->tokenFlags & WP11_TOKEN_FLAG_USER_PIN_SET) == 0)
         ret = PIN_NOT_SET_E;
+#endif
 
     if (ret == 0) {
         WP11_Lock_UnlockRO(&slot->lock);

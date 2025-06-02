@@ -417,11 +417,13 @@ static CK_RV test_no_token_init(void* args)
         ret = funcList->C_Login(session, CKU_SO, soPin, soPinLen);
         CHECK_CKR_FAIL(ret, CKR_USER_PIN_NOT_INITIALIZED,
                                                          "Login SO no PIN set");
+#ifndef WOLFPKCS11_NSS
         if (ret == CKR_OK) {
             ret = funcList->C_Login(session, CKU_USER, userPin, userPinLen);
             CHECK_CKR_FAIL(ret, CKR_USER_PIN_NOT_INITIALIZED,
                                                          "Login SO no PIN set");
         }
+#endif
         if (ret == CKR_OK) {
             ret = funcList->C_GetTokenInfo(slot, &tokenInfo);
             CHECK_CKR(ret, "Get Token Info - token not initialized");
@@ -654,12 +656,14 @@ static CK_RV test_token(void* args)
             ret = funcList->C_InitToken(slot, soPin, soPinLen, label);
             CHECK_CKR_FAIL(ret, CKR_SESSION_EXISTS,
                                                    "Init Token session exists");
+#ifndef WOLFPKCS11_NSS
             if (ret == CKR_OK) {
                 ret = funcList->C_SetPIN(session, userPin, userPinLen, userPin,
                                                                     userPinLen);
                 CHECK_CKR_FAIL(ret, CKR_USER_PIN_NOT_INITIALIZED,
                                                         "Set User PIN not set");
             }
+#endif
             funcList->C_CloseSession(session);
         }
     }
@@ -667,6 +671,7 @@ static CK_RV test_token(void* args)
     return ret;
 }
 
+#ifndef WOLFPKCS11_NSS
 static CK_RV test_open_close_session(void* args)
 {
     CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
@@ -730,6 +735,7 @@ static CK_RV test_open_close_session(void* args)
 
     return ret;
 }
+#endif
 
 static CK_RV test_pin(void* args)
 {
@@ -12674,7 +12680,9 @@ static TEST_FUNC testFunc[] = {
     PKCS11TEST_FUNC_TOKEN_DECL(test_get_info),
     PKCS11TEST_FUNC_TOKEN_DECL(test_slot),
     PKCS11TEST_FUNC_TOKEN_DECL(test_token),
+#ifndef WOLFPKCS11_NSS
     PKCS11TEST_FUNC_TOKEN_DECL(test_open_close_session),
+#endif
     PKCS11TEST_FUNC_SESS_DECL(test_login_logout),
     PKCS11TEST_FUNC_SESS_DECL(test_pin),
     PKCS11TEST_FUNC_SESS_DECL(test_session),
