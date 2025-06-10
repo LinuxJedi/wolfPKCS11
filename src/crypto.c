@@ -190,6 +190,7 @@ static AttributeType attrType[] = {
     { CKA_HASH_OF_SUBJECT_PUBLIC_KEY,  ATTR_TYPE_DATA  },
     { CKA_HASH_OF_ISSUER_PUBLIC_KEY,   ATTR_TYPE_DATA  },
     { CKA_NAME_HASH_ALGORITHM,         ATTR_TYPE_ULONG },
+    { CKA_CHECK_VALUE,                 ATTR_TYPE_DATA  },
 };
 /* Count of elements in attribute type list. */
 #define ATTR_TYPE_SIZE     (sizeof(attrType) / sizeof(*attrType))

@@ -100,6 +100,8 @@
 #define WP11_MAX_CERT_SZ              4096
 #endif
 
+#define PKCS11_CHECK_VALUE_SIZE       3
+
 /* Sizes for storage. */
 #define WP11_MAX_IV_SZ                 16
 #define WP11_MAX_GCM_NONCE_SZ          16
@@ -213,6 +215,14 @@ struct WP11_Object {
     int keyIdLen;                      /* Length of key identifier            */
     unsigned char* label;              /* Object label                        */
     int labelLen;                      /* Length of object label              */
+
+    unsigned char* issuer;             /* Issuer of certificate               */
+    int issuerLen;                     /* Length of issuer                    */
+    unsigned char* serial;             /* Serial number of certificate        */
+    int serialLen;                     /* Length of serial number             */
+    unsigned char* subject;            /* Subject of certificate              */
+    int subjectLen;                    /* Length of subject                   */
+    word32 category;                   /* Category of certificate             */
 
     WP11_Lock* lock;                   /* Object specific lock                */
 
@@ -729,7 +739,11 @@ static int wolfPKCS11_Store_GetMaxSize(int type, int variableSz)
                 FIELD_SIZE(WP11_Object, endDate) +
                 sizeof(word32) + /* keyIdLenSz */
                 sizeof(word32) + /* labelLen */
-                variableSz /* keyIdLen + labelLen */
+                sizeof(word32) + /* issuerLen */
+                sizeof(word32) + /* serialLen */
+                sizeof(word32) + /* subjectLen */
+                FIELD_SIZE(WP11_Object, category) +
+                variableSz /* keyIdLen + labelLen + issuerLen + serialLen + subjectLen */
             ;
             break;
         case WOLFPKCS11_STORE_SYMMKEY:
@@ -3142,6 +3156,34 @@ static int wp11_Object_Load_Object(WP11_Object* object, int tokenId, int objId)
                                                 &object->labelLen);
         }
 
+        if (ret == 0) {
+            /* Read issuer for the object. (variable issuerLen) */
+            ret = wp11_storage_read_alloc_array(storage, &object->issuer,
+                                                &object->issuerLen);
+
+
+            if (ret == 0) {
+                /* Read serial for the object. (variable serialLen) */
+                ret = wp11_storage_read_alloc_array(storage, &object->serial,
+                                                    &object->serialLen);
+            }
+
+            if (ret == 0) {
+                /* Read subject for the object. (variable subjectLen) */
+                ret = wp11_storage_read_alloc_array(storage, &object->subject,
+                                                    &object->subjectLen);
+            }
+
+            if (ret == 0) {
+                /* Read the category of the object. (4) */
+                ret = wp11_storage_read_word32(storage, &object->category);
+            }
+        }
+        else if (ret == BUFFER_E) {
+            /* Older version of the storage format, skip reading */
+            ret = 0;
+        }
+
         wp11_storage_close(storage);
     }
     return ret;
@@ -3204,7 +3246,8 @@ static int wp11_Object_Store_Object(WP11_Object* object, int tokenId, int objId)
 {
     int ret;
     void* storage = NULL;
-    int variableSz = (object->keyIdLen + object->labelLen);
+    int variableSz = (object->keyIdLen + object->labelLen + object->issuerLen +
+        object->serialLen + object->subjectLen);
 
     /* Open access to key object. */
     ret = wp11_storage_open(WOLFPKCS11_STORE_OBJECT, tokenId, objId, variableSz,
@@ -3261,6 +3304,27 @@ static int wp11_Object_Store_Object(WP11_Object* object, int tokenId, int objId)
             /* Write label of the object. (variable labelLen) */
             ret = wp11_storage_write_array(storage, object->label,
                                                               object->labelLen);
+        }
+
+        if (ret == 0) {
+            /* Write the issuer of the object. (variable issuerLen) */
+            ret = wp11_storage_write_array(storage, object->issuer,
+                                                            object->issuerLen);
+        }
+        if (ret == 0) {
+            /* Write the serial number of the object. (variable serialLen) */
+            ret = wp11_storage_write_array(storage, object->serial,
+                                                            object->serialLen);
+        }
+        if (ret == 0) {
+            /* Write the subject of the object. (variable subjectLen) */
+            ret = wp11_storage_write_array(storage, object->subject,
+                                                            object->subjectLen);
+        }
+
+        if (ret == 0) {
+            /* Write the category of the object. (4) */
+            ret = wp11_storage_write_word32(storage, object->category);
         }
 
         wp11_storage_close(storage);
@@ -5549,6 +5613,12 @@ void WP11_Object_Free(WP11_Object* object)
     /* Release dynamic memory. */
     if (object->label != NULL)
         XFREE(object->label, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    if (object->issuer != NULL)
+        XFREE(object->issuer, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    if (object->serial != NULL)
+        XFREE(object->serial, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    if (object->subject != NULL)
+        XFREE(object->subject, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     if (object->keyId != NULL)
         XFREE(object->keyId, NULL, DYNAMIC_TYPE_TMP_BUFFER);
     if (object->objClass == CKO_CERTIFICATE) {
@@ -6526,6 +6596,81 @@ static int SecretObject_GetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type,
     return ret;
 }
 
+#ifndef NO_SHA
+static int GetSha1CheckValue(const byte* dataIn, int inLen, byte* dataOut,
+    CK_ULONG* outLen)
+{
+    int ret;
+    byte hash[WC_SHA_DIGEST_SIZE];
+
+    if (dataOut == NULL) {
+        if (outLen != NULL) {
+            *outLen = PKCS11_CHECK_VALUE_SIZE;
+            return CKR_OK;
+        }
+        return BUFFER_E;
+    }
+
+    if (*outLen < PKCS11_CHECK_VALUE_SIZE) {
+        *outLen = PKCS11_CHECK_VALUE_SIZE;
+        return BUFFER_E;
+    }
+
+    ret = wc_Hash(WC_HASH_TYPE_SHA, dataIn, inLen, hash, WC_SHA_DIGEST_SIZE);
+    if (ret == 0) {
+        XMEMCPY(dataOut, hash, PKCS11_CHECK_VALUE_SIZE);
+        *outLen = PKCS11_CHECK_VALUE_SIZE;
+    }
+
+    return CKR_OK;
+}
+#endif
+
+#ifdef HAVE_AESECB
+static int GetEcbCheckValue(WP11_Object* secret, byte* dataOut,
+    CK_ULONG* outLen)
+{
+    int ret;
+    byte* hash;
+    byte* input;
+    word32 inLen;
+    WP11_Data* key = &secret->data.symmKey;
+
+    if (dataOut == NULL) {
+        if (outLen != NULL) {
+            *outLen = PKCS11_CHECK_VALUE_SIZE;
+            return CKR_OK;
+        }
+        return BUFFER_E;
+    }
+
+    if (*outLen < PKCS11_CHECK_VALUE_SIZE) {
+        *outLen = PKCS11_CHECK_VALUE_SIZE;
+        return BUFFER_E;
+    }
+
+    hash = XMALLOC(key->len, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    if (!hash)
+        return MEMORY_E;
+    input = XMALLOC(key->len, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+
+    inLen = key->len;
+    XMEMSET(input, 0, inLen);
+
+    ret = WP11_AesEcb_Encrypt(input, inLen, hash, &inLen, secret,
+        secret->session);
+
+    if (ret == 0) {
+        XMEMCPY(dataOut, hash, PKCS11_CHECK_VALUE_SIZE);
+        *outLen = PKCS11_CHECK_VALUE_SIZE;
+    }
+
+    XFREE(hash, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+
+    return CKR_OK;
+}
+#endif
+
 /**
  * Get the data for an attribute from the object.
  *
@@ -6662,18 +6807,48 @@ int WP11_Object_GetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
             else
                 ret = CKR_ATTRIBUTE_TYPE_INVALID;
             break;
-
-        case CKA_SUBJECT:
-            ret = NOT_AVAILABLE_E;
+        case CKA_CHECK_VALUE:
+            if (object->objClass == CKO_CERTIFICATE)
+#ifndef NO_SHA
+                ret = GetSha1CheckValue(object->data.cert.data,
+                    object->data.cert.len, data, len);
+#else
+                ret = NOT_AVAILABLE_E;
+#endif
+            else if (object->objClass == CKO_SECRET_KEY)
+#ifdef HAVE_AESECB
+                ret = GetEcbCheckValue(object, data, len);
+#else
+                ret = NOT_AVAILABLE_E;
+#endif
+            else
+                ret = NOT_AVAILABLE_E;
             break;
 
         default:
             {
-                if ((object->objClass == CKO_CERTIFICATE) &&
-                    (type == CKA_VALUE)) {
-                    ret = GetData((byte*)object->data.cert.data,
+                if (object->objClass == CKO_CERTIFICATE) {
+                    switch (type) {
+                        case CKA_VALUE:
+                            ret = GetData((byte*)object->data.cert.data,
                                 object->data.cert.len, data, len);
-                    break;
+                            break;
+                        case CKA_SUBJECT:
+                            ret = GetData(object->subject, object->subjectLen,
+                                data, len);
+                            break;
+                        case CKA_ISSUER:
+                            ret = GetData(object->issuer, object->issuerLen,
+                                data, len);
+                            break;
+                        case CKA_SERIAL_NUMBER:
+                            ret = GetData(object->serial, object->serialLen,
+                                data, len);
+                            break;
+                        case CKA_CERTIFICATE_CATEGORY:
+                            ret = GetULong(object->category, data, len);
+                            break;
+                    }
                 }
                 else {
                     switch (object->type) {
@@ -6758,7 +6933,7 @@ static int WP11_Object_SetKeyId(WP11_Object* object, unsigned char* keyId,
 }
 
 /**
- * Set the label against the object.
+ * Set the attribute against the object.
  *
  * @param  object    [in]  Object object.
  * @param  label     [in]  Label data.
@@ -6766,20 +6941,20 @@ static int WP11_Object_SetKeyId(WP11_Object* object, unsigned char* keyId,
  * @return  MEMORY_E when dynamic memory allocation fails.
  *          0 on success.
  */
-static int WP11_Object_SetLabel(WP11_Object* object, unsigned char* label,
-                                int labelLen)
+static int WP11_Object_SetData(byte **attribute, int* attributeLen, byte* data,
+    int dataLen)
 {
     int ret = 0;
 
-    if (object->label != NULL)
-        XFREE(object->label, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-    object->label = (unsigned char*)XMALLOC(labelLen, NULL,
+    if (*attribute != NULL)
+        XFREE(*attribute, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+    *attribute = (byte*)XMALLOC(dataLen, NULL,
         DYNAMIC_TYPE_TMP_BUFFER);
-    if (object->label == NULL)
+    if (*attribute == NULL)
         ret = MEMORY_E;
     if (ret == 0) {
-        XMEMCPY(object->label, label, labelLen);
-        object->labelLen = labelLen;
+        XMEMCPY(*attribute, data, dataLen);
+        *attributeLen = dataLen;
     }
 
     return ret;
@@ -6898,7 +7073,23 @@ int WP11_Object_SetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
             ret = WP11_Object_SetKeyId(object, data, (int)len);
             break;
         case CKA_LABEL:
-            ret = WP11_Object_SetLabel(object, data, (int)len);
+            ret = WP11_Object_SetData(&object->label, &object->labelLen, data,
+                (int)len);
+            break;
+        case CKA_ISSUER:
+            ret = WP11_Object_SetData(&object->issuer, &object->issuerLen,
+                data, (int)len);
+            break;
+        case CKA_SUBJECT:
+            ret = WP11_Object_SetData(&object->subject, &object->subjectLen,
+                data, (int)len);
+            break;
+        case CKA_SERIAL_NUMBER:
+            ret = WP11_Object_SetData(&object->serial, &object->serialLen,
+                data, (int)len);
+            break;
+        case CKA_CERTIFICATE_CATEGORY:
+            object->category = *(CK_ULONG*)data;
             break;
         case CKA_PRIVATE:
             WP11_Object_SetFlag(object, WP11_FLAG_PRIVATE, *(CK_BBOOL*)data);
@@ -7011,12 +7202,8 @@ int WP11_Object_SetAttr(WP11_Object* object, CK_ATTRIBUTE_TYPE type, byte* data,
         case CKA_CERTIFICATE_TYPE:
             /* Handled in WP11_Object_SetCert */
             break;
-        case CKA_SUBJECT:
-        case CKA_ISSUER:
-        case CKA_SERIAL_NUMBER:
         case CKA_AC_ISSUER:
         case CKA_ATTR_TYPES:
-        case CKA_CERTIFICATE_CATEGORY:
         case CKA_JAVA_MIDP_SECURITY_DOMAIN:
         case CKA_URL:
         case CKA_HASH_OF_SUBJECT_PUBLIC_KEY:
