@@ -372,6 +372,7 @@ WP11_LOCAL CK_OBJECT_CLASS WP11_Object_GetClass(WP11_Object* object);
 #ifdef WOLFPKCS11_NSS
 WP11_LOCAL int WP11_Object_SetTrust(WP11_Object* object, unsigned char** data,
                          CK_ULONG* len);
+int WP11_SetStoreDir(const char *dir, size_t dirSz);
 #endif
 
 WP11_LOCAL int WP11_Object_Find(WP11_Session* session, CK_OBJECT_HANDLE objHandle,
