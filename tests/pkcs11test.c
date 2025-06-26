@@ -5832,6 +5832,222 @@ static CK_RV test_rsa_gen_keys(void* args)
     return ret;
 }
 
+/* Test copying RSA key objects and verify both original and copy work correctly */
+static CK_RV test_rsa_copy_key(void* args)
+{
+    CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
+    CK_RV ret = CKR_OK;
+    CK_OBJECT_HANDLE privKey = CK_INVALID_HANDLE;
+    CK_OBJECT_HANDLE pubKey = CK_INVALID_HANDLE;
+    CK_OBJECT_HANDLE privKeyCopy = CK_INVALID_HANDLE;
+    CK_OBJECT_HANDLE pubKeyCopy = CK_INVALID_HANDLE;
+    unsigned char id[] = { 0x01, 0x02, 0x03, 0x04 };
+    unsigned char copyId[] = { 0x05, 0x06, 0x07, 0x08 };
+    byte plain[2048/8], enc1[2048/8], dec1[2048/8];
+    CK_ULONG plainSz, enc1Sz, dec1Sz;
+    CK_MECHANISM mech;
+    CK_ATTRIBUTE copyTemplate[] = {
+        { CKA_ID, copyId, sizeof(copyId) },
+        { CKA_TOKEN, &ckFalse, sizeof(ckFalse) }
+    };
+    CK_ULONG copyTemplateCount = sizeof(copyTemplate) / sizeof(*copyTemplate);
+    CK_ATTRIBUTE getAttr[2];
+    byte attrBuffer[512];
+    CK_BBOOL tokenValue;
+
+    /* Create original RSA key pair */
+    ret = get_rsa_priv_key(session, id, sizeof(id), ckTrue, &privKey);
+    CHECK_CKR(ret, "RSA Private Key Create for Copy Test");
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    ret = get_rsa_pub_key(session, id, sizeof(id), &pubKey);
+    CHECK_CKR(ret, "RSA Public Key Create for Copy Test");
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    /* Test error cases for C_CopyObject */
+    ret = funcList->C_CopyObject(CK_INVALID_HANDLE, privKey, copyTemplate,
+                                copyTemplateCount, &privKeyCopy);
+    CHECK_CKR_FAIL(ret, CKR_SESSION_HANDLE_INVALID, "RSA Copy with invalid session");
+
+    ret = funcList->C_CopyObject(session, CK_INVALID_HANDLE, copyTemplate,
+                                copyTemplateCount, &privKeyCopy);
+    CHECK_CKR_FAIL(ret, CKR_OBJECT_HANDLE_INVALID, "RSA Copy with invalid object");
+
+    ret = funcList->C_CopyObject(session, privKey, NULL, copyTemplateCount, &privKeyCopy);
+    CHECK_CKR_FAIL(ret, CKR_ARGUMENTS_BAD, "RSA Copy with NULL template");
+
+    ret = funcList->C_CopyObject(session, privKey, copyTemplate, copyTemplateCount, NULL);
+    CHECK_CKR_FAIL(ret, CKR_ARGUMENTS_BAD, "RSA Copy with NULL new object handle");
+
+    /* Test copying private key */
+    ret = funcList->C_CopyObject(session, privKey, copyTemplate, 
+                                copyTemplateCount, &privKeyCopy);
+    CHECK_CKR(ret, "RSA Private Key Copy");
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    /* Test copying public key */
+    ret = funcList->C_CopyObject(session, pubKey, copyTemplate,
+                                copyTemplateCount, &pubKeyCopy);
+    CHECK_CKR(ret, "RSA Public Key Copy");
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    /* Verify copied keys have correct attributes */
+    getAttr[0].type = CKA_ID;
+    getAttr[0].pValue = attrBuffer;
+    getAttr[0].ulValueLen = sizeof(attrBuffer);
+    
+    ret = funcList->C_GetAttributeValue(session, privKeyCopy, getAttr, 1);
+    CHECK_CKR(ret, "Get copied private key ID attribute");
+    if (ret == CKR_OK) {
+        if (getAttr[0].ulValueLen != sizeof(copyId) || 
+            XMEMCMP(getAttr[0].pValue, copyId, sizeof(copyId)) != 0) {
+            ret = -1;
+            CHECK_CKR(ret, "Copied private key ID verification");
+            goto cleanup;
+        }
+    }
+
+    getAttr[0].type = CKA_TOKEN;
+    getAttr[0].pValue = &tokenValue;
+    getAttr[0].ulValueLen = sizeof(tokenValue);
+    
+    ret = funcList->C_GetAttributeValue(session, privKeyCopy, getAttr, 1);
+    CHECK_CKR(ret, "Get copied private key TOKEN attribute");
+    if (ret == CKR_OK) {
+        if (tokenValue != CK_FALSE) {
+            ret = -1;
+            CHECK_CKR(ret, "Copied private key TOKEN verification");
+            goto cleanup;
+        }
+    }
+
+    /* First verify original keys work */
+    memset(plain, 0x5A, sizeof(plain));
+    plainSz = sizeof(plain);
+    enc1Sz = sizeof(enc1);
+    dec1Sz = sizeof(dec1);
+
+    mech.mechanism = CKM_RSA_X_509;
+    mech.ulParameterLen = 0;
+    mech.pParameter = NULL;
+
+    /* Test original key pair */
+    ret = funcList->C_EncryptInit(session, &mech, pubKey);
+    CHECK_CKR(ret, "RSA Original Public Key Encrypt Init (pre-copy test)");
+    if (ret == CKR_OK) {
+        ret = funcList->C_Encrypt(session, plain, plainSz, enc1, &enc1Sz);
+        CHECK_CKR(ret, "RSA Original Public Key Encrypt (pre-copy test)");
+    }
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    ret = funcList->C_DecryptInit(session, &mech, privKey);
+    CHECK_CKR(ret, "RSA Original Private Key Decrypt Init (pre-copy test)");
+    if (ret == CKR_OK) {
+        ret = funcList->C_Decrypt(session, enc1, enc1Sz, dec1, &dec1Sz);
+        CHECK_CKR(ret, "RSA Original Private Key Decrypt (pre-copy test)");
+    }
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    /* Verify decrypted data matches original */
+    if (dec1Sz != plainSz || XMEMCMP(plain, dec1, dec1Sz) != 0) {
+        ret = -1;
+        CHECK_CKR(ret, "RSA Original Key Pair verification (pre-copy test)");
+        goto cleanup;
+    }
+
+    /* Now test the critical functionality: copied keys should work */
+    
+    /* Reset for next test */
+    enc1Sz = sizeof(enc1);
+    dec1Sz = sizeof(dec1);
+
+    /* Encrypt with original public key, decrypt with copied private key */
+    ret = funcList->C_EncryptInit(session, &mech, pubKey);
+    CHECK_CKR(ret, "RSA Original Public Key Encrypt Init");
+    if (ret == CKR_OK) {
+        ret = funcList->C_Encrypt(session, plain, plainSz, enc1, &enc1Sz);
+        CHECK_CKR(ret, "RSA Original Public Key Encrypt");
+    }
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    /* THIS IS THE KEY TEST: Can copied private key decrypt? */
+    ret = funcList->C_DecryptInit(session, &mech, privKeyCopy);
+    CHECK_CKR(ret, "RSA Copied Private Key Decrypt Init");
+    if (ret == CKR_OK) {
+        ret = funcList->C_Decrypt(session, enc1, enc1Sz, dec1, &dec1Sz);
+        if (ret != CKR_OK) {
+            printf("*** BUG DETECTED: C_CopyObject creates non-functional RSA private key copy (error=%lu) ***\n", ret);
+        }
+        CHECK_CKR(ret, "RSA Copied Private Key Decrypt - CORE FUNCTIONALITY TEST");
+    }
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    /* Verify decrypted data matches original */
+    if (dec1Sz != plainSz || XMEMCMP(plain, dec1, dec1Sz) != 0) {
+        ret = -1;
+        printf("*** BUG DETECTED: C_CopyObject created RSA private key produces wrong decryption result ***\n");
+        CHECK_CKR(ret, "RSA Cross-Key Decrypted data verification");
+        goto cleanup;
+    }
+
+    /* Test encrypt with copied public key, decrypt with original private key */
+    enc1Sz = sizeof(enc1);
+    dec1Sz = sizeof(dec1);
+
+    ret = funcList->C_EncryptInit(session, &mech, pubKeyCopy);
+    CHECK_CKR(ret, "RSA Copied Public Key Encrypt Init");
+    if (ret == CKR_OK) {
+        ret = funcList->C_Encrypt(session, plain, plainSz, enc1, &enc1Sz);
+        if (ret != CKR_OK) {
+            printf("*** BUG DETECTED: C_CopyObject creates non-functional RSA public key copy (error=%lu) ***\n", ret);
+        }
+        CHECK_CKR(ret, "RSA Copied Public Key Encrypt - CORE FUNCTIONALITY TEST");
+    }
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    ret = funcList->C_DecryptInit(session, &mech, privKey);
+    CHECK_CKR(ret, "RSA Original Private Key Decrypt Init");
+    if (ret == CKR_OK) {
+        ret = funcList->C_Decrypt(session, enc1, enc1Sz, dec1, &dec1Sz);
+        CHECK_CKR(ret, "RSA Original Private Key Decrypt");
+    }
+    if (ret != CKR_OK)
+        goto cleanup;
+
+    /* Verify decrypted data matches original */
+    if (dec1Sz != plainSz || XMEMCMP(plain, dec1, dec1Sz) != 0) {
+        ret = -1;
+        printf("*** BUG DETECTED: C_CopyObject created RSA public key produces wrong encryption result ***\n");
+        CHECK_CKR(ret, "RSA Second Cross-Key Decrypted data verification");
+        goto cleanup;
+    }
+
+    /* If we get here, both original and copied keys work correctly */
+    printf("SUCCESS: RSA key copying works correctly - both original and copied keys functional\n");
+
+cleanup:
+    /* Clean up objects */
+    if (privKey != CK_INVALID_HANDLE)
+        funcList->C_DestroyObject(session, privKey);
+    if (pubKey != CK_INVALID_HANDLE)
+        funcList->C_DestroyObject(session, pubKey);
+    if (privKeyCopy != CK_INVALID_HANDLE)
+        funcList->C_DestroyObject(session, privKeyCopy);
+    if (pubKeyCopy != CK_INVALID_HANDLE)
+        funcList->C_DestroyObject(session, pubKeyCopy);
+
+    return ret;
+}
+
 static CK_RV test_rsa_gen_keys_id(void* args)
 {
     CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
@@ -13646,6 +13862,7 @@ static TEST_FUNC testFunc[] = {
     PKCS11TEST_FUNC_SESS_DECL(test_rsa_gen_keys),
     PKCS11TEST_FUNC_SESS_DECL(test_rsa_gen_keys_id),
 #endif
+    PKCS11TEST_FUNC_SESS_DECL(test_rsa_copy_key),
 #ifndef NO_SHA256
     PKCS11TEST_FUNC_SESS_DECL(test_sha256_rsa_pkcs15),
 #endif
