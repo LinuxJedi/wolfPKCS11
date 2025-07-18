@@ -7139,6 +7139,7 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
             derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             if (derivedKey == NULL)
                 return CKR_DEVICE_MEMORY;
+            XMEMSET(derivedKey, 0, keyLen);
 
             ret = WP11_EC_Derive(params->pPublicData,
                                        (int)params->ulPublicDataLen, derivedKey,
@@ -7176,6 +7177,7 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
             derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             if (derivedKey == NULL)
                 return CKR_DEVICE_MEMORY;
+            XMEMSET(derivedKey, 0, keyLen);
 
             ret = WP11_KDF_Derive(session, kdfParams, derivedKey, &keyLen, obj);
 
@@ -7195,6 +7197,7 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
             derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             if (derivedKey == NULL)
                 return CKR_DEVICE_MEMORY;
+            XMEMSET(derivedKey, 0, keyLen);
 
             ret = WP11_Dh_Derive((unsigned char*)pMechanism->pParameter,
                                     (int)pMechanism->ulParameterLen, derivedKey,
@@ -7220,6 +7223,7 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
             derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             if (derivedKey == NULL)
                 return CKR_DEVICE_MEMORY;
+            XMEMSET(derivedKey, 0, keyLen);
 
             ret = WP11_AesCbc_DeriveKey(params->pData, (word32)params->length,
                     derivedKey, params->iv, obj);
@@ -7254,6 +7258,7 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
             derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             if (derivedKey == NULL)
                 return CKR_DEVICE_MEMORY;
+            XMEMSET(derivedKey, 0, keyLen);
             ret = WP11_Tls12_Master_Key_Derive(&tlsParams->RandomInfo,
                                                tlsParams->prfHashMechanism,
                                                "key expansion", 13,
@@ -7300,6 +7305,7 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
             derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             if (derivedKey == NULL)
                 return CKR_DEVICE_MEMORY;
+            XMEMSET(derivedKey, 0, keyLen);
 
             ret = WP11_Tls12_Master_Key_Derive(&prfParams->RandomInfo,
                                                prfParams->prfHashMechanism,
@@ -7328,6 +7334,7 @@ CK_RV C_DeriveKey(CK_SESSION_HANDLE hSession,
             derivedKey = (byte*)XMALLOC(keyLen, NULL, DYNAMIC_TYPE_TMP_BUFFER);
             if (derivedKey == NULL)
                 return CKR_DEVICE_MEMORY;
+            XMEMSET(derivedKey, 0, keyLen);
 
             ret = WP11_Nss_Tls12_Master_Key_Derive(nssParams->pSessionHash,
                                                    nssParams->ulSessionHashLen,
