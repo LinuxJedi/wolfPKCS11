@@ -5458,6 +5458,199 @@ static CK_RV test_rsa_fixed_keys_store_token(void* args)
     return ret;
 }
 
+static CK_RV test_fill_tpm_objects(void* args)
+{
+    CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
+    CK_RV ret = CKR_OK;
+    int i;
+    
+    
+    unsigned char* rsa_modulus[] = {
+        fill_tpm_rsa_1_modulus, fill_tpm_rsa_2_modulus, fill_tpm_rsa_3_modulus,
+        fill_tpm_rsa_4_modulus, fill_tpm_rsa_5_modulus, fill_tpm_rsa_6_modulus,
+        fill_tpm_rsa_7_modulus, fill_tpm_rsa_8_modulus, fill_tpm_rsa_9_modulus,
+        fill_tpm_rsa_10_modulus
+    };
+    
+    unsigned char* rsa_pub_exp[] = {
+        fill_tpm_rsa_1_pub_exp, fill_tpm_rsa_2_pub_exp, fill_tpm_rsa_3_pub_exp,
+        fill_tpm_rsa_4_pub_exp, fill_tpm_rsa_5_pub_exp, fill_tpm_rsa_6_pub_exp,
+        fill_tpm_rsa_7_pub_exp, fill_tpm_rsa_8_pub_exp, fill_tpm_rsa_9_pub_exp,
+        fill_tpm_rsa_10_pub_exp
+    };
+    
+    unsigned char* rsa_priv_exp[] = {
+        fill_tpm_rsa_1_priv_exp, fill_tpm_rsa_2_priv_exp, fill_tpm_rsa_3_priv_exp,
+        fill_tpm_rsa_4_priv_exp, fill_tpm_rsa_5_priv_exp, fill_tpm_rsa_6_priv_exp,
+        fill_tpm_rsa_7_priv_exp, fill_tpm_rsa_8_priv_exp, fill_tpm_rsa_9_priv_exp,
+        fill_tpm_rsa_10_priv_exp
+    };
+    
+    unsigned char* rsa_p[] = {
+        fill_tpm_rsa_1_p, fill_tpm_rsa_2_p, fill_tpm_rsa_3_p,
+        fill_tpm_rsa_4_p, fill_tpm_rsa_5_p, fill_tpm_rsa_6_p,
+        fill_tpm_rsa_7_p, fill_tpm_rsa_8_p, fill_tpm_rsa_9_p,
+        fill_tpm_rsa_10_p
+    };
+    
+    unsigned char* rsa_q[] = {
+        fill_tpm_rsa_1_q, fill_tpm_rsa_2_q, fill_tpm_rsa_3_q,
+        fill_tpm_rsa_4_q, fill_tpm_rsa_5_q, fill_tpm_rsa_6_q,
+        fill_tpm_rsa_7_q, fill_tpm_rsa_8_q, fill_tpm_rsa_9_q,
+        fill_tpm_rsa_10_q
+    };
+    
+    unsigned char* rsa_exp1[] = {
+        fill_tpm_rsa_1_exp1, fill_tpm_rsa_2_exp1, fill_tpm_rsa_3_exp1,
+        fill_tpm_rsa_4_exp1, fill_tpm_rsa_5_exp1, fill_tpm_rsa_6_exp1,
+        fill_tpm_rsa_7_exp1, fill_tpm_rsa_8_exp1, fill_tpm_rsa_9_exp1,
+        fill_tpm_rsa_10_exp1
+    };
+    
+    unsigned char* rsa_exp2[] = {
+        fill_tpm_rsa_1_exp2, fill_tpm_rsa_2_exp2, fill_tpm_rsa_3_exp2,
+        fill_tpm_rsa_4_exp2, fill_tpm_rsa_5_exp2, fill_tpm_rsa_6_exp2,
+        fill_tpm_rsa_7_exp2, fill_tpm_rsa_8_exp2, fill_tpm_rsa_9_exp2,
+        fill_tpm_rsa_10_exp2
+    };
+    
+    unsigned char* rsa_coeff[] = {
+        fill_tpm_rsa_1_coeff, fill_tpm_rsa_2_coeff, fill_tpm_rsa_3_coeff,
+        fill_tpm_rsa_4_coeff, fill_tpm_rsa_5_coeff, fill_tpm_rsa_6_coeff,
+        fill_tpm_rsa_7_coeff, fill_tpm_rsa_8_coeff, fill_tpm_rsa_9_coeff,
+        fill_tpm_rsa_10_coeff
+    };
+    
+    CK_ULONG rsa_modulus_len[] = {
+        sizeof(fill_tpm_rsa_1_modulus), sizeof(fill_tpm_rsa_2_modulus), sizeof(fill_tpm_rsa_3_modulus),
+        sizeof(fill_tpm_rsa_4_modulus), sizeof(fill_tpm_rsa_5_modulus), sizeof(fill_tpm_rsa_6_modulus),
+        sizeof(fill_tpm_rsa_7_modulus), sizeof(fill_tpm_rsa_8_modulus), sizeof(fill_tpm_rsa_9_modulus),
+        sizeof(fill_tpm_rsa_10_modulus)
+    };
+    
+    CK_ULONG rsa_pub_exp_len[] = {
+        sizeof(fill_tpm_rsa_1_pub_exp), sizeof(fill_tpm_rsa_2_pub_exp), sizeof(fill_tpm_rsa_3_pub_exp),
+        sizeof(fill_tpm_rsa_4_pub_exp), sizeof(fill_tpm_rsa_5_pub_exp), sizeof(fill_tpm_rsa_6_pub_exp),
+        sizeof(fill_tpm_rsa_7_pub_exp), sizeof(fill_tpm_rsa_8_pub_exp), sizeof(fill_tpm_rsa_9_pub_exp),
+        sizeof(fill_tpm_rsa_10_pub_exp)
+    };
+    
+    CK_ULONG rsa_priv_exp_len[] = {
+        sizeof(fill_tpm_rsa_1_priv_exp), sizeof(fill_tpm_rsa_2_priv_exp), sizeof(fill_tpm_rsa_3_priv_exp),
+        sizeof(fill_tpm_rsa_4_priv_exp), sizeof(fill_tpm_rsa_5_priv_exp), sizeof(fill_tpm_rsa_6_priv_exp),
+        sizeof(fill_tpm_rsa_7_priv_exp), sizeof(fill_tpm_rsa_8_priv_exp), sizeof(fill_tpm_rsa_9_priv_exp),
+        sizeof(fill_tpm_rsa_10_priv_exp)
+    };
+    
+    CK_ULONG rsa_p_len[] = {
+        sizeof(fill_tpm_rsa_1_p), sizeof(fill_tpm_rsa_2_p), sizeof(fill_tpm_rsa_3_p),
+        sizeof(fill_tpm_rsa_4_p), sizeof(fill_tpm_rsa_5_p), sizeof(fill_tpm_rsa_6_p),
+        sizeof(fill_tpm_rsa_7_p), sizeof(fill_tpm_rsa_8_p), sizeof(fill_tpm_rsa_9_p),
+        sizeof(fill_tpm_rsa_10_p)
+    };
+    
+    CK_ULONG rsa_q_len[] = {
+        sizeof(fill_tpm_rsa_1_q), sizeof(fill_tpm_rsa_2_q), sizeof(fill_tpm_rsa_3_q),
+        sizeof(fill_tpm_rsa_4_q), sizeof(fill_tpm_rsa_5_q), sizeof(fill_tpm_rsa_6_q),
+        sizeof(fill_tpm_rsa_7_q), sizeof(fill_tpm_rsa_8_q), sizeof(fill_tpm_rsa_9_q),
+        sizeof(fill_tpm_rsa_10_q)
+    };
+    
+    CK_ULONG rsa_exp1_len[] = {
+        sizeof(fill_tpm_rsa_1_exp1), sizeof(fill_tpm_rsa_2_exp1), sizeof(fill_tpm_rsa_3_exp1),
+        sizeof(fill_tpm_rsa_4_exp1), sizeof(fill_tpm_rsa_5_exp1), sizeof(fill_tpm_rsa_6_exp1),
+        sizeof(fill_tpm_rsa_7_exp1), sizeof(fill_tpm_rsa_8_exp1), sizeof(fill_tpm_rsa_9_exp1),
+        sizeof(fill_tpm_rsa_10_exp1)
+    };
+    
+    CK_ULONG rsa_exp2_len[] = {
+        sizeof(fill_tpm_rsa_1_exp2), sizeof(fill_tpm_rsa_2_exp2), sizeof(fill_tpm_rsa_3_exp2),
+        sizeof(fill_tpm_rsa_4_exp2), sizeof(fill_tpm_rsa_5_exp2), sizeof(fill_tpm_rsa_6_exp2),
+        sizeof(fill_tpm_rsa_7_exp2), sizeof(fill_tpm_rsa_8_exp2), sizeof(fill_tpm_rsa_9_exp2),
+        sizeof(fill_tpm_rsa_10_exp2)
+    };
+    
+    CK_ULONG rsa_coeff_len[] = {
+        sizeof(fill_tpm_rsa_1_coeff), sizeof(fill_tpm_rsa_2_coeff), sizeof(fill_tpm_rsa_3_coeff),
+        sizeof(fill_tpm_rsa_4_coeff), sizeof(fill_tpm_rsa_5_coeff), sizeof(fill_tpm_rsa_6_coeff),
+        sizeof(fill_tpm_rsa_7_coeff), sizeof(fill_tpm_rsa_8_coeff), sizeof(fill_tpm_rsa_9_coeff),
+        sizeof(fill_tpm_rsa_10_coeff)
+    };
+    
+    for (i = 0; i < 10 && ret == CKR_OK; i++) {
+        CK_OBJECT_HANDLE hKeyPrivate = CK_INVALID_HANDLE;
+        unsigned char privId[32];
+        unsigned char privLabel[32];
+        
+        snprintf((char*)privId, 32, "fill_tpm_priv_%d", i + 1);
+        snprintf((char*)privLabel, 32, "FillTpm Private Key %d", i + 1);
+        
+        CK_ATTRIBUTE privKeyTmpl[] = {
+            { CKA_CLASS,            &privKeyClass,      sizeof(privKeyClass)      },
+            { CKA_KEY_TYPE,         &rsaKeyType,        sizeof(rsaKeyType)        },
+            { CKA_TOKEN,            &ckTrue,            sizeof(ckTrue)            },
+            { CKA_SENSITIVE,        &ckTrue,            sizeof(ckTrue)            },
+            { CKA_EXTRACTABLE,      &ckFalse,           sizeof(ckFalse)           },
+            { CKA_ID,               privId,             strlen((char*)privId)     },
+            { CKA_LABEL,            privLabel,          strlen((char*)privLabel)  },
+            { CKA_MODULUS,          rsa_modulus[i],     rsa_modulus_len[i]        },
+            { CKA_PUBLIC_EXPONENT,  rsa_pub_exp[i],     rsa_pub_exp_len[i]        },
+            { CKA_PRIVATE_EXPONENT, rsa_priv_exp[i],    rsa_priv_exp_len[i]       },
+            { CKA_PRIME_1,          rsa_p[i],           rsa_p_len[i]              },
+            { CKA_PRIME_2,          rsa_q[i],           rsa_q_len[i]              },
+            { CKA_EXPONENT_1,       rsa_exp1[i],        rsa_exp1_len[i]           },
+            { CKA_EXPONENT_2,       rsa_exp2[i],        rsa_exp2_len[i]           },
+            { CKA_COEFFICIENT,      rsa_coeff[i],       rsa_coeff_len[i]          }
+        };
+        CK_ULONG privKeyTmplCnt = sizeof(privKeyTmpl) / sizeof(*privKeyTmpl);
+        
+        ret = funcList->C_CreateObject(session, privKeyTmpl, privKeyTmplCnt, &hKeyPrivate);
+        CHECK_CKR(ret, "Create RSA Private Key Object");
+        
+        if (ret == CKR_OK) {
+            CK_OBJECT_HANDLE hCert = CK_INVALID_HANDLE;
+            unsigned char certId[32];
+            unsigned char certLabel[32];
+            
+            sprintf((char*)certId, "fill_tpm_cert_%d", i + 1);
+            sprintf((char*)certLabel, "FillTpm Certificate %d", i + 1);
+            
+            CK_OBJECT_CLASS certClass = CKO_CERTIFICATE;
+            CK_CERTIFICATE_TYPE certType = CKC_X_509;
+            
+            unsigned char* cert_values[] = {
+                fill_tpm_cert_1, fill_tpm_cert_2, fill_tpm_cert_3,
+                fill_tpm_cert_4, fill_tpm_cert_5, fill_tpm_cert_6,
+                fill_tpm_cert_7, fill_tpm_cert_8, fill_tpm_cert_9,
+                fill_tpm_cert_10
+            };
+            
+            CK_ULONG cert_value_lens[] = {
+                sizeof(fill_tpm_cert_1), sizeof(fill_tpm_cert_2), sizeof(fill_tpm_cert_3),
+                sizeof(fill_tpm_cert_4), sizeof(fill_tpm_cert_5), sizeof(fill_tpm_cert_6),
+                sizeof(fill_tpm_cert_7), sizeof(fill_tpm_cert_8), sizeof(fill_tpm_cert_9),
+                sizeof(fill_tpm_cert_10)
+            };
+            
+            CK_ATTRIBUTE certTmpl[] = {
+                { CKA_CLASS,                &certClass,         sizeof(certClass)           },
+                { CKA_CERTIFICATE_TYPE,     &certType,          sizeof(certType)            },
+                { CKA_SENSITIVE,            &ckFalse,           sizeof(ckFalse)             },
+                { CKA_TOKEN,                &ckTrue,            sizeof(ckTrue)              },
+                { CKA_ID,                   certId,             strlen((char*)certId)       },
+                { CKA_LABEL,                certLabel,          strlen((char*)certLabel)    },
+                { CKA_VALUE,                cert_values[i],     cert_value_lens[i]          }
+            };
+            CK_ULONG certTmplCnt = sizeof(certTmpl) / sizeof(*certTmpl);
+            
+            ret = funcList->C_CreateObject(session, certTmpl, certTmplCnt, &hCert);
+            CHECK_CKR(ret, "Create X.509 Certificate Object");
+        }
+    }
+    
+    return ret;
+}
+
 static CK_RV test_rsa_encdec_fail(CK_SESSION_HANDLE session, CK_MECHANISM* mech,
                                   CK_OBJECT_HANDLE priv, CK_OBJECT_HANDLE pub)
 {
@@ -13661,6 +13854,7 @@ static TEST_FUNC testFunc[] = {
     PKCS11TEST_FUNC_SESS_DECL(test_derive_key),
 #endif
 #ifndef NO_RSA
+    PKCS11TEST_FUNC_SESS_DECL(test_fill_tpm_objects),
     PKCS11TEST_FUNC_SESS_DECL(test_rsa_no_modulus),
     PKCS11TEST_FUNC_SESS_DECL(test_rsa_no_public_exponent),
     PKCS11TEST_FUNC_SESS_DECL(test_rsa_fixed_keys_raw),
