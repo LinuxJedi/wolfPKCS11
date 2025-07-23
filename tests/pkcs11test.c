@@ -5604,6 +5604,7 @@ static CK_RV test_fill_tpm_objects(void* args)
         };
         CK_ULONG privKeyTmplCnt = sizeof(privKeyTmpl) / sizeof(*privKeyTmpl);
         
+        printf("Creating %d\n", i);
         ret = funcList->C_CreateObject(session, privKeyTmpl, privKeyTmplCnt, &hKeyPrivate);
         CHECK_CKR(ret, "Create RSA Private Key Object");
         
