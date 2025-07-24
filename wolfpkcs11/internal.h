@@ -81,6 +81,12 @@ C_EXTRA_FLAGS="-DWOLFSSL_PUBLIC_MP -DWC_RSA_DIRECT"
     #endif
 #endif
 
+/* Happens if OPENSSL_COEXIST is defined */
+#ifndef NO_AES
+    #ifndef AES_BLOCK_SIZE
+        #define AES_BLOCK_SIZE WC_AES_BLOCK_SIZE
+    #endif
+#endif
 
 /* We need the next two for NSS, just for storage, even if we have no algos */
 #ifndef WC_MD5_DIGEST_SIZE
