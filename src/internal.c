@@ -6564,11 +6564,6 @@ int WP11_Object_SetRsaKey(WP11_Object* object, unsigned char** data,
 
 #ifdef HAVE_ECC
 
-#if defined(HAVE_FIPS) && \
-    (defined(HAVE_FIPS_VERSION) && (HAVE_FIPS_VERSION <= 2))
-#define USE_LOCAL_CURVE_OID_LOOKUP
-/* This function is not in the FIPS 140-2 version */
-/* ecc_sets is exposed in ecc.h */
 static int ecc_get_curve_id_from_oid(const byte* oid, word32 len)
 {
     int curve_idx;
@@ -6581,8 +6576,14 @@ static int ecc_get_curve_id_from_oid(const byte* oid, word32 len)
         #ifndef WOLFSSL_ECC_CURVE_STATIC
             ecc_sets[curve_idx].oid &&
         #endif
+        #ifdef HAVE_OID_ENCODING
+        /* Decoded oids are an array of shorts, so 2x the byte comparison */
+            ecc_sets[curve_idx].oidSz == len &&
+                XMEMCMP(ecc_sets[curve_idx].oid, oid, len * 2) == 0
+        #else
             ecc_sets[curve_idx].oidSz == len &&
                 XMEMCMP(ecc_sets[curve_idx].oid, oid, len) == 0
+        #endif
         ) {
             break;
         }
@@ -6594,7 +6595,56 @@ static int ecc_get_curve_id_from_oid(const byte* oid, word32 len)
     return ecc_sets[curve_idx].id;
 }
 
+#ifdef HAVE_OID_ENCODING
+/* Encode dotted form of OID into byte array version.
+ * Clone of the internal function in wolfSSL
+ *
+ * @param [in]      in     Byte array containing OID.
+ * @param [in]      inSz   Size of OID in bytes.
+ * @param [in]      out    Array to hold dotted form of OID.
+ * @param [in, out] outSz  On in, number of elements in array.
+ *                         On out, count of numbers in dotted form.
+ * @return  0 on success
+ * @return  BAD_FUNC_ARG when in or outSz is NULL.
+ * @return  BUFFER_E when dotted form buffer too small.
+ */
+int DecodeObjectId(const byte* in, word32 inSz, word16* out, word32* outSz)
+{
+    int x = 0, y = 0;
+    word32 t = 0;
+
+    /* check args */
+    if (in == NULL || outSz == NULL) {
+        return BAD_FUNC_ARG;
+    }
+
+    /* decode bytes */
+    while (inSz--) {
+        t = (t << 7) | (in[x] & 0x7F);
+        if (!(in[x] & 0x80)) {
+            if (y >= (int)*outSz) {
+                return BUFFER_E;
+            }
+            if (y == 0) {
+                out[0] = (word16)(t / 40);
+                out[1] = (word16)(t % 40);
+                y = 2;
+            }
+            else {
+                out[y++] = (word16)t;
+            }
+            t = 0; /* reset tmp */
+        }
+        x++;
+    }
+
+    /* return length */
+    *outSz = (word32)y;
+
+    return 0;
+}
 #endif
+
 /**
  * Set the EC Parameters based on the DER encoding of the OID.
  *
@@ -6621,11 +6671,17 @@ static int EcSetParams(ecc_key* key, byte* der, int len)
         ret = BUFFER_E;
     if (ret == 0) {
         /* Find the curve matching the OID. */
-    #ifdef USE_LOCAL_CURVE_OID_LOOKUP
-        curveId = ecc_get_curve_id_from_oid(der + 2, der[1]);
+    #ifdef HAVE_OID_ENCODING
+        word16 dotted_oid[MAX_OID_SZ];
+        word32 dotted_len = sizeof(dotted_oid);
+        ret = DecodeObjectId(der + 2, der[1], dotted_oid, &dotted_len);
+        if (ret != 0)
+            return ASN_PARSE_E;
+        curveId = ecc_get_curve_id_from_oid((byte*)dotted_oid, dotted_len);
     #else
-        curveId = wc_ecc_get_curve_id_from_oid(der + 2, der[1]);
+        curveId = ecc_get_curve_id_from_oid(der + 2, der[1]);
     #endif
+
         if (curveId == ECC_CURVE_INVALID)
             ret = BAD_FUNC_ARG;
     }
