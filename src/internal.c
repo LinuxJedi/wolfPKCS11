@@ -849,6 +849,10 @@ typedef struct WP11_TpmStore {
     WOLFTPM2_DEV* dev;
     WOLFTPM2_NV nv;
     word32 offset;
+    word32 currentDataSize;
+    word32 neededSize;
+    word32 nvIndex;
+    int storeType;
 } WP11_TpmStore;
 static WP11_TpmStore tpmStores[1]; /* maximum of 1 open store */
 
@@ -916,6 +920,95 @@ static int wolfPKCS11_Store_GetMaxSize(int type, int variableSz)
     }
     return maxSz;
 }
+
+/**
+ * Expand TPM NV storage if needed during read operations.
+ *
+ * @param [in]  tpmStore     TPM store context.
+ * @param [in]  additionalSz Additional size needed.
+ * @return  0 on success.
+ * @return  Negative value on error.
+ */
+static int wolfPKCS11_Store_ExpandIfNeeded(WP11_TpmStore* tpmStore,
+    int additionalSz)
+{
+    int ret = 0;
+    word32 totalNeeded;
+    WOLFTPM2_HANDLE parent;
+    word32 nvAttributes;
+    int newMaxSz;
+
+    if (tpmStore == NULL || additionalSz <= 0) {
+        return 0; /* Nothing to do */
+    }
+
+    /* Safety check for valid TPM device */
+    if (tpmStore->dev == NULL) {
+        return NOT_AVAILABLE_E;
+    }
+
+    /* Update needed size */
+    tpmStore->neededSize += additionalSz;
+    totalNeeded = tpmStore->offset + tpmStore->neededSize;
+
+    /* Check if we need to expand */
+    if (totalNeeded <= tpmStore->currentDataSize) {
+        return 0; /* No expansion needed */
+    }
+
+#ifdef WOLFPKCS11_DEBUG_STORE
+    printf("TPM NV expansion needed: current %d, needed %d "
+           "(offset=%d, additional=%d)\n",
+           tpmStore->currentDataSize, totalNeeded, tpmStore->offset,
+           additionalSz);
+#endif
+
+    /* Calculate new maximum size */
+    newMaxSz = wolfPKCS11_Store_GetMaxSize(tpmStore->storeType,
+        tpmStore->neededSize);
+    if (newMaxSz <= 0) {
+        return NOT_AVAILABLE_E;
+    }
+
+    /* Setup parent and attributes for expansion */
+    XMEMSET(&parent, 0, sizeof(parent));
+    parent.hndl = WOLFPKCS11_TPM_AUTH_TYPE;
+    (void)wolfTPM2_GetNvAttributesTemplate(parent.hndl, &nvAttributes);
+
+#ifdef WOLFPKCS11_DEBUG_STORE
+    printf("Expanding TPM NV Handle 0x%x during read: %d -> %d\n",
+           tpmStore->nvIndex, tpmStore->currentDataSize, newMaxSz);
+#endif
+
+    /* Close current handle */
+    wolfTPM2_UnloadHandle(tpmStore->dev, &tpmStore->nv.handle);
+
+    /* Delete existing NV */
+    ret = wolfTPM2_NVDeleteAuth(tpmStore->dev, &parent, tpmStore->nvIndex);
+    if (ret != 0) {
+        printf("Error %d (%s) removing NV handle 0x%x during expansion\n",
+               ret, wolfTPM2_GetRCString(ret), tpmStore->nvIndex);
+        return ret;
+    }
+
+    /* Create new larger NV */
+    ret = wolfTPM2_NVCreateAuth(tpmStore->dev, &parent,
+                                &tpmStore->nv, tpmStore->nvIndex,
+                                nvAttributes, newMaxSz, NULL, 0);
+    if (ret == 0) {
+        tpmStore->currentDataSize = newMaxSz;
+#ifdef WOLFPKCS11_DEBUG_STORE
+        printf("TPM NV Handle 0x%x expanded successfully to %d bytes\n",
+               tpmStore->nvIndex, newMaxSz);
+#endif
+    } else {
+        printf("Error %d (%s) creating expanded NV handle 0x%x\n",
+               ret, wolfTPM2_GetRCString(ret), tpmStore->nvIndex);
+    }
+
+    return ret;
+}
+
 #endif /* WOLFPKCS11_TPM_STORE */
 
 /* Functions that handle storing data. */
@@ -969,12 +1062,20 @@ int wolfPKCS11_Store_OpenSz(int type, CK_ULONG id1, CK_ULONG id2, int read,
     XMEMSET(&parent, 0, sizeof(parent));
     XMEMSET(tpmStore, 0, sizeof(*tpmStore));
     tpmStore->dev = &slot->tpmDev;
+    tpmStore->offset = 0;
+    tpmStore->currentDataSize = 0;
+    tpmStore->neededSize = 0;
 
     /* Build unique handle */
     nvIndex = WOLFPKCS11_TPM_NV_BASE +
                 ((type & 0x0F) << 16) +
          (((word32)id1 & 0xFF) << 8) +
           ((word32)id2 & 0xFF);
+
+    /* Store context for potential expansion */
+    tpmStore->nvIndex = nvIndex;
+    tpmStore->storeType = type;
+    tpmStore->neededSize = 0;
 
     maxSz = wolfPKCS11_Store_GetMaxSize(type, variableSz);
     if (maxSz <= 0) {
@@ -988,10 +1089,11 @@ int wolfPKCS11_Store_OpenSz(int type, CK_ULONG id1, CK_ULONG id2, int read,
         parent.hndl = WOLFPKCS11_TPM_AUTH_TYPE;
         (void)wolfTPM2_GetNvAttributesTemplate(parent.hndl, &nvAttributes);
 
-        /* If write check if handle is large enough */
-        if (!read) {
-            ret = wolfTPM2_NVReadPublic(tpmStore->dev, nvIndex, &nvPublic);
-            if (ret == 0 && nvPublic.dataSize < maxSz) {
+        /* Check if handle is large enough for both read and write */
+        ret = wolfTPM2_NVReadPublic(tpmStore->dev, nvIndex, &nvPublic);
+        if (ret == 0) {
+            tpmStore->currentDataSize = nvPublic.dataSize;
+            if (!read && nvPublic.dataSize < maxSz) {
                 /* NV is not large enough, delete and re-create */
                 printf("Expanding TPM NV Handle 0x%x: %d -> %d\n",
                     nvIndex, nvPublic.dataSize, maxSz);
@@ -1003,12 +1105,19 @@ int wolfPKCS11_Store_OpenSz(int type, CK_ULONG id1, CK_ULONG id2, int read,
                 }
             }
         }
+        else if (read) {
+            /* For reads, if NV doesn't exist, it's an error */
+            tpmStore->currentDataSize = 0;
+        }
         /* Try and open handle */
         ret = wolfTPM2_NVOpen(tpmStore->dev, &tpmStore->nv, nvIndex, NULL, 0);
         if (ret != 0) {
             if (!read) {
                 ret = wolfTPM2_NVCreateAuth(tpmStore->dev, &parent,
                     &tpmStore->nv, nvIndex, nvAttributes, maxSz, NULL, 0);
+                if (ret == 0) {
+                    tpmStore->currentDataSize = maxSz;
+                }
             }
             else {
                 ret = NOT_AVAILABLE_E; /* read for handle that doesn't exist */
@@ -1271,12 +1380,18 @@ int wolfPKCS11_Store_Read(void* store, unsigned char* buffer, int len)
     }
     else {
         /* calling code expects BUFFER_E if the read is out of range */
-        if (ret == TPM_RC_NV_RANGE)
+        if (ret == TPM_RC_NV_RANGE) {
             ret = BUFFER_E;
+        #ifdef WOLFPKCS11_DEBUG_STORE
+            printf("TPM NV Read range error at offset %d, len %d\n",
+                   tpmStore->offset, len);
+        #endif
+        }
         else {
             /* log failure and make negative error code */
         #ifdef WOLFPKCS11_DEBUG_STORE
-            printf("TPM NV Read Error 0x%x: %s\n", ret, wolfTPM2_GetRCString(ret));
+            printf("TPM NV Read Error 0x%x: %s\n", ret,
+                wolfTPM2_GetRCString(ret));
         #endif
             ret = -ret;
         }
@@ -1405,17 +1520,35 @@ static int wp11_storage_read(void* storage, unsigned char* buffer, int len)
     while (len > 0) {
         ret = wolfPKCS11_Store_Read(storage, p, len);
         if (ret <= 0) {
+#ifdef WOLFPKCS11_TPM_STORE
+            /* If TPM range error, try expanding storage */
+            if (ret == BUFFER_E) {
+                WP11_TpmStore* tpmStore = (WP11_TpmStore*)storage;
+                int expandRet = wolfPKCS11_Store_ExpandIfNeeded(tpmStore, len);
+                if (expandRet == 0) {
+                    /* Reset offset to try reading again */
+                    tpmStore->offset = (word32)(p - (unsigned char*)buffer);
+                    ret = wolfPKCS11_Store_Read(storage, p, len);
+                    if (ret > 0) {
+                        len -= ret;
+                        p += ret;
+                        continue;
+                    }
+                }
+            }
+#endif
             break;
         }
         len -= ret;
         p += ret;
     }
+
     if (len == 0) {
         /* All read successfully. */
         ret = 0;
     }
-    else if (ret == 0) {
-        /* Failed to read all data. */
+    else {
+        /* Partial read. */
         ret = BUFFER_E;
     }
 
@@ -1779,10 +1912,26 @@ static int wp11_storage_read_alloc_array(void* storage,
     /* Read length of array. */
     ret = wp11_storage_read_int(storage, len);
     if (ret == 0) {
-        /* Allocate buffer to hold data. */
-        *buffer = (unsigned char*)XMALLOC(*len, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-        if (*buffer == NULL)
-            ret = MEMORY_E;
+#ifdef WOLFPKCS11_TPM_STORE
+        /* Check if we need to expand TPM storage for this array */
+        WP11_TpmStore* tpmStore = (WP11_TpmStore*)storage;
+        if (tpmStore != NULL && *len > 0) {
+#ifdef WOLFPKCS11_DEBUG_STORE
+            printf("TPM Store: Reading array of %d bytes at offset %d\n", *len,
+                tpmStore->offset);
+#endif
+            ret = wolfPKCS11_Store_ExpandIfNeeded(tpmStore, *len);
+        }
+        if (ret == 0) {
+#endif
+            /* Allocate buffer to hold data. */
+            *buffer = (unsigned char*)XMALLOC(*len, NULL,
+                DYNAMIC_TYPE_TMP_BUFFER);
+            if (*buffer == NULL)
+                ret = MEMORY_E;
+#ifdef WOLFPKCS11_TPM_STORE
+        }
+#endif
     }
     if (ret == 0) {
         /* Read array data into allocated buffer. */
