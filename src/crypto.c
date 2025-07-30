@@ -1082,8 +1082,11 @@ CK_RV C_CreateObject(CK_SESSION_HANDLE hSession, CK_ATTRIBUTE_PTR pTemplate,
         return rv;
     }
     rv = AddObject(session, object, pTemplate, ulCount, phObject);
-    if (rv != CKR_OK)
+    if (rv != CKR_OK) {
+        WP11_Session_RemoveObject(session, object);
         WP11_Object_Free(object);
+        object = NULL;
+    }
 
     WOLFPKCS11_LEAVE("C_CreateObject", rv);
     return rv;
