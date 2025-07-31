@@ -36,12 +36,24 @@ noinst_PROGRAMS += tests/object_id_uniqueness_test
 tests_object_id_uniqueness_test_SOURCES = tests/object_id_uniqueness_test.c
 tests_object_id_uniqueness_test_LDADD =
 
+check_PROGRAMS += tests/rsa_session_persistence_part1
+noinst_PROGRAMS += tests/rsa_session_persistence_part1
+tests_rsa_session_persistence_part1_SOURCES = tests/rsa_session_persistence_part1.c
+tests_rsa_session_persistence_part1_LDADD =
+
+check_PROGRAMS += tests/rsa_session_persistence_part2
+noinst_PROGRAMS += tests/rsa_session_persistence_part2
+tests_rsa_session_persistence_part2_SOURCES = tests/rsa_session_persistence_part2.c
+tests_rsa_session_persistence_part2_LDADD =
+
 if BUILD_STATIC
 tests_pkcs11test_LDADD += src/libwolfpkcs11.la
 tests_pkcs11mtt_LDADD  += src/libwolfpkcs11.la
 tests_pkcs11str_LDADD  += src/libwolfpkcs11.la
 tests_token_path_test_LDADD += src/libwolfpkcs11.la
 tests_rsa_session_persistence_test_LDADD += src/libwolfpkcs11.la
+tests_rsa_session_persistence_part1_LDADD += src/libwolfpkcs11.la
+tests_rsa_session_persistence_part2_LDADD += src/libwolfpkcs11.la
 tests_debug_test_LDADD += src/libwolfpkcs11.la
 tests_object_id_uniqueness_test_LDADD += src/libwolfpkcs11.la
 else
@@ -50,4 +62,6 @@ endif
 
 EXTRA_DIST += tests/unit.h \
               tests/testdata.h \
-              tests/README.md
+              tests/README.md \
+              tests/run_split_persistence_test.sh \
+              tests/SPLIT_PERSISTENCE_TEST.md
