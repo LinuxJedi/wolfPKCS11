@@ -474,8 +474,6 @@ static CK_MECHANISM_TYPE mechanismList[] = {
 #endif
 #endif
 #ifdef WOLFPKCS11_NSS
-    /* Only advertise CKM_SSL3_MASTER_KEY_DERIVE. Not implemented. */
-    CKM_SSL3_MASTER_KEY_DERIVE,
     CKM_NSS_PKCS12_PBE_SHA224_HMAC_KEY_GEN,
     CKM_NSS_PKCS12_PBE_SHA256_HMAC_KEY_GEN,
     CKM_NSS_PKCS12_PBE_SHA384_HMAC_KEY_GEN,
@@ -725,11 +723,6 @@ static CK_MECHANISM_INFO nssPkcs12PbeSha512HmacKeyGenMechInfo = {
     512, 512, CKF_GENERATE
 };
 #endif
-#endif
-#ifdef WOLFPKCS11_NSS
-static CK_MECHANISM_INFO ssl3MasterKeyDeriveInfo = {
-    48, 48, CKF_DERIVE
-};
 #endif
 #ifdef WOLFSSL_HAVE_PRF
 static CK_MECHANISM_INFO tlsMacMechInfo = {
@@ -1237,13 +1230,6 @@ CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type,
                     sizeof(CK_MECHANISM_INFO));
             break;
 #endif
-#endif
-#ifdef WOLFPKCS11_NSS
-        /* Only advertise CKM_SSL3_MASTER_KEY_DERIVE. Not implemented. */
-        case CKM_SSL3_MASTER_KEY_DERIVE:
-            XMEMCPY(pInfo, &ssl3MasterKeyDeriveInfo,
-                    sizeof(CK_MECHANISM_INFO));
-            break;
 #endif
 #ifdef WOLFSSL_HAVE_PRF
         case CKM_TLS_MAC:

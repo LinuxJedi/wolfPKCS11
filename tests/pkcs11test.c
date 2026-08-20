@@ -625,6 +625,15 @@ static CK_RV test_slot(void* args)
         ret = funcList->C_GetMechanismList(slot, list, &count);
         CHECK_CKR(ret, "Get Mechanism List count");
     }
+    if (ret == CKR_OK) {
+        for (i = 0; i < (int)count; i++) {
+            if (list[i] == CKM_SSL3_MASTER_KEY_DERIVE) {
+                ret = CKR_GENERAL_ERROR;
+                break;
+            }
+        }
+        CHECK_CKR(ret, "Unimplemented SSL3 master derive not advertised");
+    }
 
     if (ret == CKR_OK) {
         ret = funcList->C_GetMechanismInfo(0, list[0], &info);
@@ -639,6 +648,12 @@ static CK_RV test_slot(void* args)
         ret = funcList->C_GetMechanismInfo(slot, -1, &info);
         CHECK_CKR_FAIL(ret, CKR_MECHANISM_INVALID,
                                                  "Get Mechanism Info bad mech");
+    }
+    if (ret == CKR_OK) {
+        ret = funcList->C_GetMechanismInfo(slot, CKM_SSL3_MASTER_KEY_DERIVE,
+                                           &info);
+        CHECK_CKR_FAIL(ret, CKR_MECHANISM_INVALID,
+                       "Get Mechanism Info unimplemented SSL3 derive");
     }
     if (ret == CKR_OK) {
         for (i = 0; ret == CKR_OK && i < (int)count; i++) {
