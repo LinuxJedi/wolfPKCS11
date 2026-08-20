@@ -6629,14 +6629,6 @@ static int wp11_Object_Store(WP11_Object* object, int tokenId, int objId)
     /* Open access to key object. */
     ret = wp11_Object_Store_Object(object, tokenId, objId);
 
-    if (ret == 0 && object->keyData == NULL &&
-            (object->objClass == CKO_PRIVATE_KEY ||
-               object->type == CKK_AES ||
-               object->type == CKK_GENERIC_SECRET)) {
-        /* Generate new IV if needed */
-        ret = wc_RNG_GenerateBlock(&object->slot->token.rng, object->iv,
-                                                            sizeof(object->iv));
-    }
     if (ret == 0) {
         if (object->objClass == CKO_CERTIFICATE) {
             ret = wp11_Object_Store_Cert(object, tokenId, objId);
@@ -6801,7 +6793,7 @@ static int wp11_Object_Decode(WP11_Object* object)
  * @return  0 on success.
  * @return  -ve on failure.
  */
-static int wp11_Object_Encode(WP11_Object* object, int protect)
+static int wp11_Object_EncodeData(WP11_Object* object, int protect)
 {
     int ret;
 
@@ -6890,6 +6882,32 @@ static int wp11_Object_Encode(WP11_Object* object, int protect)
                 ret = NOT_AVAILABLE_E;
         }
     }
+
+    return ret;
+}
+
+static int wp11_Object_Encode(WP11_Object* object, int protect)
+{
+    int ret = 0;
+    int encrypt = object->objClass == CKO_PRIVATE_KEY ||
+                  object->type == CKK_AES ||
+                  object->type == CKK_GENERIC_SECRET;
+
+#ifdef WOLFPKCS11_HKDF
+    encrypt = encrypt || object->type == CKK_HKDF;
+#endif
+
+    /* Every AES-GCM encryption under the token key needs a fresh nonce. Do
+     * this immediately before encoding, while the plaintext is still the
+     * source of the ciphertext that will be persisted. */
+    if (encrypt) {
+        WP11_Lock_LockRW(&object->slot->token.rngLock);
+        ret = wc_RNG_GenerateBlock(&object->slot->token.rng, object->iv,
+                                   sizeof(object->iv));
+        WP11_Lock_UnlockRW(&object->slot->token.rngLock);
+    }
+    if (ret == 0)
+        ret = wp11_Object_EncodeData(object, protect);
 
     return ret;
 }
