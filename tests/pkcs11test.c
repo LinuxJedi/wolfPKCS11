@@ -544,6 +544,7 @@ static CK_RV test_slot(void* args)
     CK_ULONG count;
     CK_MECHANISM_TYPE* list = NULL;
     CK_MECHANISM_INFO info;
+    int ssl3MasterFound = 0;
     int i;
 
     (void)session;
@@ -627,12 +628,16 @@ static CK_RV test_slot(void* args)
     }
     if (ret == CKR_OK) {
         for (i = 0; i < (int)count; i++) {
-            if (list[i] == CKM_SSL3_MASTER_KEY_DERIVE) {
-                ret = CKR_GENERAL_ERROR;
-                break;
-            }
+            if (list[i] == CKM_SSL3_MASTER_KEY_DERIVE)
+                ssl3MasterFound = 1;
         }
-        CHECK_CKR(ret, "Unimplemented SSL3 master derive not advertised");
+#ifdef WOLFPKCS11_NSS
+        CHECK_COND(ssl3MasterFound, ret,
+                   "NSS SSL3 master target mechanism advertised");
+#else
+        CHECK_COND(!ssl3MasterFound, ret,
+                   "Unimplemented SSL3 master derive not advertised");
+#endif
     }
 
     if (ret == CKR_OK) {
@@ -652,8 +657,16 @@ static CK_RV test_slot(void* args)
     if (ret == CKR_OK) {
         ret = funcList->C_GetMechanismInfo(slot, CKM_SSL3_MASTER_KEY_DERIVE,
                                            &info);
+#ifdef WOLFPKCS11_NSS
+        CHECK_CKR(ret, "Get NSS SSL3 master target mechanism info");
+        if (ret == CKR_OK) {
+            CHECK_COND(info.flags == 0, ret,
+                       "NSS SSL3 master target has no derive capability");
+        }
+#else
         CHECK_CKR_FAIL(ret, CKR_MECHANISM_INVALID,
                        "Get Mechanism Info unimplemented SSL3 derive");
+#endif
     }
     if (ret == CKR_OK) {
         for (i = 0; ret == CKR_OK && i < (int)count; i++) {

@@ -474,6 +474,8 @@ static CK_MECHANISM_TYPE mechanismList[] = {
 #endif
 #endif
 #ifdef WOLFPKCS11_NSS
+    /* NSS uses this as a target-key marker when unwrapping TLS secrets. */
+    CKM_SSL3_MASTER_KEY_DERIVE,
     CKM_NSS_PKCS12_PBE_SHA224_HMAC_KEY_GEN,
     CKM_NSS_PKCS12_PBE_SHA256_HMAC_KEY_GEN,
     CKM_NSS_PKCS12_PBE_SHA384_HMAC_KEY_GEN,
@@ -721,6 +723,12 @@ static CK_MECHANISM_INFO nssPkcs12PbeSha384HmacKeyGenMechInfo = {
 };
 static CK_MECHANISM_INFO nssPkcs12PbeSha512HmacKeyGenMechInfo = {
     512, 512, CKF_GENERATE
+};
+/* NSS requires this mechanism identifier when selecting the slot used to
+ * unwrap cached TLS secrets. C_DeriveKey does not implement the mechanism, so
+ * do not advertise CKF_DERIVE. */
+static CK_MECHANISM_INFO ssl3MasterKeyTargetInfo = {
+    48, 48, 0
 };
 #endif
 #endif
@@ -1227,6 +1235,10 @@ CK_RV C_GetMechanismInfo(CK_SLOT_ID slotID, CK_MECHANISM_TYPE type,
             break;
         case CKM_NSS_PKCS12_PBE_SHA512_HMAC_KEY_GEN:
             XMEMCPY(pInfo, &nssPkcs12PbeSha512HmacKeyGenMechInfo,
+                    sizeof(CK_MECHANISM_INFO));
+            break;
+        case CKM_SSL3_MASTER_KEY_DERIVE:
+            XMEMCPY(pInfo, &ssl3MasterKeyTargetInfo,
                     sizeof(CK_MECHANISM_INFO));
             break;
 #endif
