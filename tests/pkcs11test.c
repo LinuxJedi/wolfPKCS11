@@ -4656,6 +4656,72 @@ static CK_RV test_find_objects(void* args)
     return ret;
 }
 
+static CK_RV test_find_objects_many(void* args)
+{
+    CK_SESSION_HANDLE session = *(CK_SESSION_HANDLE*)args;
+    CK_RV ret = CKR_OK;
+    CK_OBJECT_HANDLE objects[WP11_FIND_MAX + 1];
+    CK_OBJECT_HANDLE found[7];
+    CK_ULONG foundCount;
+    CK_ULONG total = 0;
+    int created = 0;
+    int findActive = 0;
+    int i;
+    static byte keyData[] = { 0x5a };
+    static byte id[] = { 0x46, 0x38, 0x36, 0x35, 0x37 };
+    CK_ATTRIBUTE tmpl[] = {
+        { CKA_CLASS,    &secretKeyClass,  sizeof(secretKeyClass) },
+        { CKA_KEY_TYPE, &genericKeyType,  sizeof(genericKeyType) },
+        { CKA_VALUE,    keyData,          sizeof(keyData)         },
+        { CKA_ID,       id,               sizeof(id)              },
+        { CKA_TOKEN,    &ckTrue,          sizeof(ckTrue)          },
+        { CKA_PRIVATE,  &ckFalse,         sizeof(ckFalse)         },
+    };
+    CK_ATTRIBUTE findTmpl[] = {
+        { CKA_ID, id, sizeof(id) },
+    };
+
+    for (i = 0; ret == CKR_OK && i < (int)(WP11_FIND_MAX + 1); i++) {
+        ret = funcList->C_CreateObject(session, tmpl,
+            sizeof(tmpl) / sizeof(*tmpl), &objects[i]);
+        CHECK_CKR(ret, "Create object beyond former find cache limit");
+        if (ret == CKR_OK)
+            created++;
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_FindObjectsInit(session, findTmpl,
+            sizeof(findTmpl) / sizeof(*findTmpl));
+        CHECK_CKR(ret, "Find many objects init");
+        if (ret == CKR_OK)
+            findActive = 1;
+    }
+    while (ret == CKR_OK) {
+        ret = funcList->C_FindObjects(session, found,
+                                      sizeof(found) / sizeof(*found),
+                                      &foundCount);
+        CHECK_CKR(ret, "Find many objects batch");
+        if (ret != CKR_OK || foundCount == 0)
+            break;
+        total += foundCount;
+    }
+    if (ret == CKR_OK) {
+        CHECK_COND(total == WP11_FIND_MAX + 1, ret,
+                   "Find returns objects beyond former cache limit");
+    }
+    if (findActive) {
+        CK_RV finalRet = funcList->C_FindObjectsFinal(session);
+        CHECK_CKR(finalRet, "Find many objects final");
+        if (ret == CKR_OK)
+            ret = finalRet;
+    }
+
+    for (i = 0; i < created; i++)
+        funcList->C_DestroyObject(session, objects[i]);
+
+    return ret;
+}
+
 static CK_RV get_aes_128_key(CK_SESSION_HANDLE session, unsigned char* id,
                              int idLen, CK_OBJECT_HANDLE* key)
 {
@@ -18156,6 +18222,7 @@ static TEST_FUNC testFunc[] = {
 #endif
     PKCS11TEST_FUNC_SESS_DECL(test_get_attr_value_all_processed),
     PKCS11TEST_FUNC_SESS_DECL(test_find_objects),
+    PKCS11TEST_FUNC_SESS_DECL(test_find_objects_many),
     PKCS11TEST_FUNC_SESS_DECL(test_private_object_access),
 #ifndef WOLFPKCS11_NSS
     PKCS11TEST_FUNC_SESS_DECL(test_private_object_handle_access),

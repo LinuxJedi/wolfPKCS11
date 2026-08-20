@@ -333,10 +333,11 @@ struct WP11_Object {
 
 typedef struct WP11_Find {
     int state;                         /* Whether operation is initialized    */
-    CK_OBJECT_HANDLE found[WP11_FIND_MAX];
+    CK_OBJECT_HANDLE* found;
                                        /* List of object handles found        */
     int count;                         /* Count of object handles             */
     int curr;                          /* Index of last object returned       */
+    int capacity;                      /* Allocated entries in found          */
 } WP11_Find;
 
 #ifndef NO_RSA
@@ -10182,9 +10183,17 @@ int WP11_Session_FindInit(WP11_Session* session)
     if (session->find.state != WP11_FIND_STATE_NULL)
         ret = BAD_STATE_E;
     if (ret == 0) {
+        session->find.found = (CK_OBJECT_HANDLE*)XMALLOC(
+            WP11_FIND_MAX * sizeof(*session->find.found), NULL,
+            DYNAMIC_TYPE_TMP_BUFFER);
+        if (session->find.found == NULL)
+            ret = MEMORY_E;
+    }
+    if (ret == 0) {
         session->find.state = WP11_FIND_STATE_INIT;
         session->find.count = 0;
         session->find.curr = 0;
+        session->find.capacity = WP11_FIND_MAX;
     }
 
     return ret;
@@ -10255,16 +10264,27 @@ static WP11_Object* wp11_Session_FindNext(WP11_Session* session, int onToken,
  *
  * @param  session  [in]  Session object.
  * @param  object   [in]  Object object to store reference to.
- * @return  FIND_FULL_E when the found list is full.
+ * @return  MEMORY_E when the found list cannot be grown.
  *          0 on success.
  */
 static int wp11_Session_FindMatched(WP11_Session* session, WP11_Object* object)
 {
     int ret = 0;
 
-    if (session->find.count == WP11_FIND_MAX)
-        ret = FIND_FULL_E;
-    else {
+    if (session->find.count == session->find.capacity) {
+        int capacity = session->find.capacity * 2;
+        CK_OBJECT_HANDLE* found = (CK_OBJECT_HANDLE*)XREALLOC(
+            session->find.found, capacity * sizeof(*found), NULL,
+            DYNAMIC_TYPE_TMP_BUFFER);
+
+        if (found == NULL)
+            ret = MEMORY_E;
+        else {
+            session->find.found = found;
+            session->find.capacity = capacity;
+        }
+    }
+    if (ret == 0) {
         session->find.found[session->find.count++] = object->handle;
         session->find.state = WP11_FIND_STATE_FOUND;
     }
@@ -10280,16 +10300,18 @@ static int wp11_Session_FindMatched(WP11_Session* session, WP11_Object* object)
  * @param  pTemplate  [in]  Array of attributes that must match.
  * @param  ulCount    [in]  Number of attributes in array.
  */
-void WP11_Session_Find(WP11_Session* session, int onToken,
-                       CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount)
+int WP11_Session_Find(WP11_Session* session, int onToken,
+                      CK_ATTRIBUTE_PTR pTemplate, CK_ULONG ulCount)
 {
     WP11_Object* obj = NULL;
+    int ret = 0;
     int i;
     CK_ATTRIBUTE* attr;
 
     if (onToken)
         WP11_Lock_LockRO(&session->slot->token.lock);
-    while ((obj = wp11_Session_FindNext(session, onToken, obj)) != NULL) {
+    while (ret == 0 &&
+           (obj = wp11_Session_FindNext(session, onToken, obj)) != NULL) {
         for (i = 0; i < (int)ulCount; i++) {
             attr = &pTemplate[i];
             if (!WP11_Object_MatchAttr(obj, attr->type, (byte*)attr->pValue,
@@ -10298,13 +10320,13 @@ void WP11_Session_Find(WP11_Session* session, int onToken,
             }
         }
 
-        if (i == (int)ulCount) {
-            if (wp11_Session_FindMatched(session, obj) == FIND_FULL_E)
-                break;
-        }
+        if (i == (int)ulCount)
+            ret = wp11_Session_FindMatched(session, obj);
     }
     if (onToken)
         WP11_Lock_UnlockRO(&session->slot->token.lock);
+
+    return ret;
 }
 
 /**
@@ -10342,6 +10364,13 @@ int WP11_Session_FindGet(WP11_Session* session, CK_OBJECT_HANDLE* handle)
  */
 void WP11_Session_FindFinal(WP11_Session* session)
 {
+    if (session->find.found != NULL) {
+        XFREE(session->find.found, NULL, DYNAMIC_TYPE_TMP_BUFFER);
+        session->find.found = NULL;
+    }
+    session->find.count = 0;
+    session->find.curr = 0;
+    session->find.capacity = 0;
     session->find.state = WP11_FIND_STATE_NULL;
 }
 

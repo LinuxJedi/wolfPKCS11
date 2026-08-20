@@ -2147,7 +2147,7 @@ CK_RV C_SetAttributeValue(CK_SESSION_HANDLE hSession,
 
 /**
  * Initialize the finding of an object associated with the session.
- * All matching objects are found, up to a limit, by this call.
+ * All matching objects are found by this call.
  *
  * @param  hSession   [in]  Handle of session.
  * @param  pTemplate  [in]  Template of attributes match against object.
@@ -2167,6 +2167,7 @@ CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession,
     CK_RV rv;
     WP11_Session* session;
     CK_ATTRIBUTE* attr;
+    int ret;
     int onToken = 1;
 
     WOLFPKCS11_ENTER("C_FindObjectsInit");
@@ -2192,8 +2193,9 @@ CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession,
         return rv;
     }
 
-    if (WP11_Session_FindInit(session) != 0) {
-        rv = CKR_OPERATION_ACTIVE;
+    ret = WP11_Session_FindInit(session);
+    if (ret != 0) {
+        rv = ret == MEMORY_E ? CKR_HOST_MEMORY : CKR_OPERATION_ACTIVE;
         WOLFPKCS11_LEAVE("C_FindObjectsInit", rv);
         return rv;
     }
@@ -2201,11 +2203,13 @@ CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession,
     FindAttributeType(pTemplate, ulCount, CKA_TOKEN, &attr);
     if (attr != NULL) {
         if (attr->pValue == NULL) {
+            WP11_Session_FindFinal(session);
             rv = CKR_ATTRIBUTE_VALUE_INVALID;
             WOLFPKCS11_LEAVE("C_FindObjectsInit", rv);
             return rv;
         }
         if (attr->ulValueLen != sizeof(CK_BBOOL)) {
+            WP11_Session_FindFinal(session);
             rv = CKR_ATTRIBUTE_VALUE_INVALID;
             WOLFPKCS11_LEAVE("C_FindObjectsInit", rv);
             return rv;
@@ -2213,7 +2217,13 @@ CK_RV C_FindObjectsInit(CK_SESSION_HANDLE hSession,
         onToken = *(CK_BBOOL*)attr->pValue;
     }
 
-    WP11_Session_Find(session, onToken, pTemplate, ulCount);
+    ret = WP11_Session_Find(session, onToken, pTemplate, ulCount);
+    if (ret != 0) {
+        WP11_Session_FindFinal(session);
+        rv = ret == MEMORY_E ? CKR_HOST_MEMORY : CKR_FUNCTION_FAILED;
+        WOLFPKCS11_LEAVE("C_FindObjectsInit", rv);
+        return rv;
+    }
 
     rv = CKR_OK;
     WOLFPKCS11_LEAVE("C_FindObjectsInit", rv);
