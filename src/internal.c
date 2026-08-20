@@ -8745,20 +8745,6 @@ static int wp11_LoginStateIsUser(int state)
             state == WP11_APP_STATE_RW_USER);
 }
 
-static int wp11_LoginStateCanAccessPrivate(int state)
-{
-#ifdef WOLFPKCS11_NSS
-    /* NSS uses wolfPKCS11 as its internal crypto module and accesses private
-     * objects from public sessions. This exception must not extend to SO
-     * sessions, which PKCS#11 does not authorize to use private objects. */
-    return wp11_LoginStateIsUser(state) ||
-           state == WP11_APP_STATE_RO_PUBLIC ||
-           state == WP11_APP_STATE_RW_PUBLIC;
-#else
-    return wp11_LoginStateIsUser(state);
-#endif
-}
-
 /**
  * Check whether the normal user is logged in to the token.
  *
@@ -10285,15 +10271,17 @@ static WP11_Object* wp11_Session_FindNext(WP11_Session* session, int onToken,
         }
    #endif
 
+#ifndef WOLFPKCS11_NSS
         /* F-3835: a public session must not discover CKA_PRIVATE objects.
          * An empty user PIN does not waive this - the caller can still
-         * authenticate with C_Login (empty PIN included). NSS operates as the
-         * internal crypto module without calling C_Login, so public sessions
-         * retain access in that mode while SO sessions remain excluded. */
+         * authenticate with C_Login (empty PIN included). Skipped in NSS
+         * mode, which operates as the internal crypto module without calling
+         * C_Login and enumerates private keys (e.g. certutil) from a public
+         * session - matching the by-handle WP11_Object_Find check below. */
         if ((ret->opFlag & WP11_FLAG_PRIVATE) == WP11_FLAG_PRIVATE) {
             if (!onToken)
                 WP11_Lock_LockRO(&session->slot->token.lock);
-            if (!wp11_LoginStateCanAccessPrivate(
+            if (!wp11_LoginStateIsUser(
                     session->slot->token.loginState)) {
                 object = ret;
                 ret = NULL;
@@ -10301,6 +10289,7 @@ static WP11_Object* wp11_Session_FindNext(WP11_Session* session, int onToken,
             if (!onToken)
                 WP11_Lock_UnlockRO(&session->slot->token.lock);
         }
+#endif
     }
 
     return ret;
@@ -11586,9 +11575,10 @@ int WP11_Object_Find(WP11_Session* session, CK_OBJECT_HANDLE objHandle,
     }
 
     if (ret == 0 && obj != NULL && (obj->handle == objHandle)) {
+#ifndef WOLFPKCS11_NSS
         /* Enforce CKA_PRIVATE: reject private objects from public sessions.
-         * NSS public sessions retain their internal-module exception, but SO
-         * sessions are never authorized to access private objects. */
+         * Skipped in NSS mode because NSS operates as the internal crypto
+         * module without calling C_Login. */
         if ((obj->opFlag & WP11_FLAG_PRIVATE) == WP11_FLAG_PRIVATE) {
             int loginState;
             WP11_Lock_LockRO(&session->slot->lock);
@@ -11596,11 +11586,12 @@ int WP11_Object_Find(WP11_Session* session, CK_OBJECT_HANDLE objHandle,
             /* F-3835: resolving a CKA_PRIVATE object requires a normal-user
              * login even when the user PIN is empty. An SO login grants no
              * access to private objects. */
-            if (!wp11_LoginStateCanAccessPrivate(loginState)) {
+            if (!wp11_LoginStateIsUser(loginState)) {
                 ret = BAD_FUNC_ARG;
             }
             WP11_Lock_UnlockRO(&session->slot->lock);
         }
+#endif
         if (ret == 0)
             *object = obj;
     }

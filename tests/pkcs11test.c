@@ -17045,7 +17045,12 @@ static CK_RV test_private_object_access(void* args)
     };
     CK_ULONG findTmplCnt = sizeof(findTmpl) / sizeof(*findTmpl);
     CK_OBJECT_HANDLE found;
+#ifndef WOLFPKCS11_NSS
     CK_OBJECT_HANDLE soObj = CK_INVALID_HANDLE;
+#else
+    CK_OBJECT_HANDLE nssObj = CK_INVALID_HANDLE;
+    CK_BBOOL nssSession = CK_FALSE;
+#endif
     CK_ULONG valueLen = 0;
     CK_ATTRIBUTE getTmpl = {
         CKA_VALUE_LEN, &valueLen, sizeof(valueLen)
@@ -17080,6 +17085,7 @@ static CK_RV test_private_object_access(void* args)
         }
     }
 
+#ifndef WOLFPKCS11_NSS
     if (ret == CKR_OK) {
         ret = funcList->C_Login(session, CKU_SO, soPin, soPinLen);
         CHECK_CKR(ret, "Login SO for private object test");
@@ -17118,6 +17124,37 @@ static CK_RV test_private_object_access(void* args)
         ret = funcList->C_Logout(session);
         CHECK_CKR(ret, "Logout SO for private object test");
     }
+#else
+    /* NSS is an internal crypto module with an established SO-session
+     * exception to the standard private-object rules. Keep that compatibility
+     * behavior while F-8650 tightens only the default PKCS#11 build. */
+    if (ret == CKR_OK) {
+        ret = funcList->C_Login(session, CKU_SO, soPin, soPinLen);
+        CHECK_CKR(ret, "Login SO for NSS private object test");
+    }
+
+    if (ret == CKR_OK) {
+        tmpl[4].pValue = &nssSession;
+        ret = funcList->C_CreateObject(session, tmpl, tmplCnt, &nssObj);
+        CHECK_CKR(ret, "NSS SO creates private session object");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_GetAttributeValue(session, nssObj, &getTmpl, 1);
+        CHECK_CKR(ret, "NSS SO resolves private session object");
+    }
+
+    if (nssObj != CK_INVALID_HANDLE) {
+        funcList->C_DestroyObject(session, nssObj);
+        nssObj = CK_INVALID_HANDLE;
+    }
+    tmpl[4].pValue = &ckTrue;
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_Logout(session);
+        CHECK_CKR(ret, "Logout SO for NSS private object test");
+    }
+#endif
 
     if (ret == CKR_OK) {
         /* Login as user. */

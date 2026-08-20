@@ -479,7 +479,14 @@ static CK_RV CheckPrivateLogin(WP11_Session* session,
         return CKR_OK;
     if (WP11_Slot_Has_Empty_Pin(slot))
         return CKR_OK;
+#ifdef WOLFPKCS11_NSS
+    /* NSS operates as an internal crypto module and has separate private
+     * object semantics. Preserve its existing any-login behavior; F-8650
+     * applies to the standard PKCS#11 session model. */
+    if (!WP11_Slot_IsLoggedIn(slot))
+#else
     if (!WP11_Slot_IsUserLoggedIn(slot))
+#endif
         return CKR_USER_NOT_LOGGED_IN;
     return CKR_OK;
 }
