@@ -17194,8 +17194,10 @@ int WP11_AesKeyWrapPad_Decrypt(unsigned char* enc, word32 encSz,
 
     wc_ForceZero(padBuf, paddedSz);
     XFREE(padBuf, NULL, DYNAMIC_TYPE_TMP_BUFFER);
-    wc_AesFree(&wrap->aes);
-    session->init = 0;
+    if (ret != BUFFER_E) {
+        wc_AesFree(&wrap->aes);
+        session->init = 0;
+    }
     return ret;
 }
 #endif /* HAVE_AES_KEYWRAP */

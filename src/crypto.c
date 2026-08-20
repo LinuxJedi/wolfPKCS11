@@ -4024,7 +4024,6 @@ CK_RV C_Decrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncryptedData,
                     (word32)ulEncryptedDataLen, pData, &decDataLen, session);
             if (ret == BUFFER_E) {
                 *pulDataLen = decDataLen;
-                WP11_Session_SetOpInitialized(session, 0);
                 return CKR_BUFFER_TOO_SMALL;
             }
             if (ret != 0)
