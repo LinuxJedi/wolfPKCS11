@@ -9900,6 +9900,12 @@ int WP11_Session_AddObject(WP11_Session* session, int onToken,
     token = &session->slot->token;
     WP11_Lock_LockRW(&token->lock);
     if (onToken) {
+#ifndef WOLFPKCS11_NO_STORE
+        WP11_Object* oldHead = token->object;
+        int oldObjCnt = token->objCnt;
+        int oldNextObjId = token->nextObjId;
+#endif
+
         if (token->objCnt >= WP11_TOKEN_OBJECT_CNT_MAX)
             ret = OBJ_COUNT_E;
     #ifndef WOLFPKCS11_NO_STORE
@@ -9919,6 +9925,14 @@ int WP11_Session_AddObject(WP11_Session* session, int onToken,
     #ifndef WOLFPKCS11_NO_STORE
         if (ret == 0) {
             ret = wp11_Slot_Store(session->slot, (int)session->slotId);
+            if (ret != 0) {
+                token->object = oldHead;
+                token->objCnt = oldObjCnt;
+                token->nextObjId = oldNextObjId;
+                object->handle = CK_INVALID_HANDLE;
+                object->next = NULL;
+                object->lock = NULL;
+            }
         }
     #endif
     }
