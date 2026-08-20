@@ -34,6 +34,7 @@
 
 #if defined(_WIN32) || defined(_MSC_VER)
     #include <direct.h>
+    #include <io.h>
     #include <sys/stat.h>
     #define TEST_SET_READONLY(path) _chmod(path, _S_IREAD)
     #define TEST_SET_WRITABLE(path) _chmod(path, _S_IREAD | _S_IWRITE)
