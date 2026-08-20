@@ -6496,6 +6496,9 @@ static int wp11_Object_Load(WP11_Object* object, int tokenId, int objId)
             #ifndef NO_AES
                 case CKK_AES:
             #endif
+            #ifdef WOLFPKCS11_HKDF
+                case CKK_HKDF:
+            #endif
                 case CKK_GENERIC_SECRET:
                     ret = wp11_Object_Load_SymmKey(object, tokenId, objId);
                     break;
@@ -6688,6 +6691,9 @@ static int wp11_Object_Store(WP11_Object* object, int tokenId, int objId)
             #ifndef NO_AES
                 case CKK_AES:
             #endif
+            #ifdef WOLFPKCS11_HKDF
+                case CKK_HKDF:
+            #endif
                 case CKK_GENERIC_SECRET:
                     ret = wp11_Object_Store_SymmKey(object, tokenId, objId);
                     break;
@@ -6768,6 +6774,9 @@ static int wp11_Object_Decode(WP11_Object* object)
         #endif
         #ifndef NO_AES
             case CKK_AES:
+        #endif
+        #ifdef WOLFPKCS11_HKDF
+            case CKK_HKDF:
         #endif
             case CKK_GENERIC_SECRET:
                 ret = wp11_Object_Decode_SymmKey(object);
@@ -6866,6 +6875,9 @@ static int wp11_Object_Encode(WP11_Object* object, int protect)
         #endif
         #ifndef NO_AES
             case CKK_AES:
+        #endif
+        #ifdef WOLFPKCS11_HKDF
+            case CKK_HKDF:
         #endif
             case CKK_GENERIC_SECRET:
                 ret = wp11_Object_Encode_SymmKey(object);
@@ -6974,6 +6986,9 @@ static int wp11_Object_Unstore(WP11_Object* object, int tokenId, int objId)
     #endif
     #ifndef NO_AES
         case CKK_AES:
+    #endif
+    #ifdef WOLFPKCS11_HKDF
+        case CKK_HKDF:
     #endif
         case CKK_GENERIC_SECRET:
             storeObjType = WOLFPKCS11_STORE_SYMMKEY;
