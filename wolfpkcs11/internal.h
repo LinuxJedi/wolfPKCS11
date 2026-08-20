@@ -378,6 +378,7 @@ C_EXTRA_FLAGS="-DWOLFSSL_PUBLIC_MP -DWC_RSA_DIRECT"
 #define OBJ_TYPE_E                     -11
 #define PARAM_E                        -12
 #define LOGGED_IN_ANOTHER_E            -13
+#define WP11_CTR_OVERFLOW_E             -14
 
 
 typedef struct WP11_Object WP11_Object;

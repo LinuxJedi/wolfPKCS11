@@ -2829,6 +2829,8 @@ CK_RV C_Encrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pData,
             encDataLen = (word32)*pulEncryptedDataLen;
             ret = WP11_AesCtr_Do(pData, (word32)ulDataLen, pEncryptedData,
                                  &encDataLen, session);
+            if (ret == WP11_CTR_OVERFLOW_E)
+                return CKR_DATA_LEN_RANGE;
             if (ret != 0)
                 break;
             *pulEncryptedDataLen = encDataLen;
@@ -3140,6 +3142,10 @@ CK_RV C_EncryptUpdate(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pPart,
             encPartLen = (word32)*pulEncryptedPartLen;
             ret = WP11_AesCtr_Update(pPart, (int)ulPartLen, pEncryptedPart,
                                      &encPartLen, session);
+            if (ret == WP11_CTR_OVERFLOW_E) {
+                WP11_AesCtr_Final(session);
+                return CKR_DATA_LEN_RANGE;
+            }
             if (ret < 0) {
                 WP11_Session_SetOpInitialized(session, 0);
                 return CKR_FUNCTION_FAILED;
@@ -3869,6 +3875,8 @@ CK_RV C_Decrypt(CK_SESSION_HANDLE hSession, CK_BYTE_PTR pEncryptedData,
             decDataLen = (word32)*pulDataLen;
             ret = WP11_AesCtr_Do(pEncryptedData,
                     (word32)ulEncryptedDataLen, pData, &decDataLen, session);
+            if (ret == WP11_CTR_OVERFLOW_E)
+                return CKR_DATA_LEN_RANGE;
             if (ret != 0)
                 break;
             *pulDataLen = decDataLen;
@@ -4187,6 +4195,10 @@ CK_RV C_DecryptUpdate(CK_SESSION_HANDLE hSession,
             decPartLen = (word32)*pulPartLen;
             ret = WP11_AesCtr_Update(pEncryptedPart, (word32)ulEncryptedPartLen,
                                      pPart, &decPartLen, session);
+            if (ret == WP11_CTR_OVERFLOW_E) {
+                WP11_AesCtr_Final(session);
+                return CKR_DATA_LEN_RANGE;
+            }
             if (ret < 0) {
                 WP11_Session_SetOpInitialized(session, 0);
                 return CKR_FUNCTION_FAILED;

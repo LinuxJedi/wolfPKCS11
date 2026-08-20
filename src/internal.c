@@ -384,6 +384,11 @@ typedef struct WP11_CbcParams {
 #ifdef HAVE_AESCTR
 typedef struct WP11_CtrParams {
     Aes aes;                           /* AES object from wolfCrypt           */
+    unsigned char counter[AES_BLOCK_SIZE];
+                                       /* Next counter block to use           */
+    byte counterBits;                  /* Bits in counter field               */
+    byte offset;                       /* Bytes used in current stream block  */
+    byte exhausted;                    /* Counter field has wrapped           */
 } WP11_CtrParams;
 #endif
 
@@ -9645,6 +9650,7 @@ int WP11_Session_SetCtrParams(WP11_Session* session, CK_ULONG ulCounterBits,
     if (ulCounterBits > 128 || ulCounterBits == 0)
         return BAD_FUNC_ARG;
 
+    XMEMSET(ctr, 0, sizeof(*ctr));
     ret = wc_AesInit(&ctr->aes, NULL, object->devId);
     if (ret == 0) {
         if (object->onToken)
@@ -9653,6 +9659,10 @@ int WP11_Session_SetCtrParams(WP11_Session* session, CK_ULONG ulCounterBits,
         ret = wc_AesSetKey(&ctr->aes, key->data, key->len, cb, AES_ENCRYPTION);
         if (object->onToken)
             WP11_Lock_UnlockRO(object->lock);
+    }
+    if (ret == 0) {
+        XMEMCPY(ctr->counter, cb, sizeof(ctr->counter));
+        ctr->counterBits = (byte)ulCounterBits;
     }
 
     return ret;
@@ -16205,6 +16215,60 @@ int WP11_AesCbcPad_DecryptFinal(unsigned char* dec, word32* decSz,
 #endif /* HAVE_AES_CBC */
 
 #ifdef HAVE_AESCTR
+/* Add to the least-significant counterBits bits of a big-endian counter. */
+static int wp11_AesCtr_Add(unsigned char* counter, byte counterBits,
+                           word32 add)
+{
+    int first = AES_BLOCK_SIZE - (counterBits + 7) / 8;
+    int i;
+    word32 carry = add;
+    byte mask = (counterBits & 7) == 0 ? 0xff :
+                (byte)((1U << (counterBits & 7)) - 1U);
+
+    for (i = AES_BLOCK_SIZE - 1; i >= first; i--) {
+        word32 value = counter[i];
+        word32 sum;
+
+        if (i == first)
+            value &= mask;
+        sum = value + (carry & 0xff);
+        carry = (carry >> 8) + (sum >> 8);
+        if (i == first) {
+            counter[i] = (counter[i] & (byte)~mask) | (byte)(sum & mask);
+            if (sum > mask)
+                carry = 1;
+        }
+        else {
+            counter[i] = (byte)sum;
+        }
+    }
+
+    return carry != 0;
+}
+
+/* Check that all counters needed for an update are still in range. */
+static int wp11_AesCtr_Check(WP11_CtrParams* ctr, word32 inSz,
+                             word32* newBlocks)
+{
+    unsigned char counter[AES_BLOCK_SIZE];
+    word32 available = ctr->offset == 0 ? 0 : AES_BLOCK_SIZE - ctr->offset;
+    word32 remaining = inSz > available ? inSz - available : 0;
+
+    *newBlocks = remaining / AES_BLOCK_SIZE;
+    if ((remaining & (AES_BLOCK_SIZE - 1)) != 0)
+        (*newBlocks)++;
+    if (*newBlocks == 0)
+        return 0;
+    if (ctr->exhausted)
+        return WP11_CTR_OVERFLOW_E;
+
+    XMEMCPY(counter, ctr->counter, sizeof(counter));
+    if (wp11_AesCtr_Add(counter, ctr->counterBits, *newBlocks - 1))
+        return WP11_CTR_OVERFLOW_E;
+
+    return 0;
+}
+
 /**
  * Encrypt or decrypt data with AES-CTR.
  * Output buffer must be large enough to hold all data.
@@ -16250,12 +16314,19 @@ int WP11_AesCtr_Update(unsigned char* in, word32 inSz, unsigned char* out,
 {
     int ret = 0;
     WP11_CtrParams* ctr = &session->params.ctr;
+    word32 newBlocks;
 
     if (*outSz < inSz)
         return BUFFER_E;
-    ret = wc_AesCtrEncrypt(&ctr->aes, out, in, inSz);
+    ret = wp11_AesCtr_Check(ctr, inSz, &newBlocks);
     if (ret == 0)
+        ret = wc_AesCtrEncrypt(&ctr->aes, out, in, inSz);
+    if (ret == 0) {
+        if (wp11_AesCtr_Add(ctr->counter, ctr->counterBits, newBlocks))
+            ctr->exhausted = 1;
+        ctr->offset = (byte)((ctr->offset + inSz) & (AES_BLOCK_SIZE - 1));
         *outSz = inSz;
+    }
 
     return ret;
 }
