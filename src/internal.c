@@ -374,7 +374,10 @@ typedef struct WP11_CbcParams {
     Aes aes;                           /* AES object from wolfCrypt           */
     unsigned char partial[AES_BLOCK_SIZE];
                                        /* Partial block when streaming        */
+    unsigned char final[AES_BLOCK_SIZE];
+                                       /* Decrypted final block for retry     */
     byte partialSz;                    /* Size of partial block data          */
+    byte finalReady;                   /* Final block has been decrypted      */
 } WP11_CbcParams;
 #endif
 
@@ -9593,7 +9596,9 @@ int WP11_Session_SetCbcParams(WP11_Session* session, unsigned char* iv,
      * state here. Reset it before use (as the other Set*Params routines do) so
      * a fresh CBC operation cannot inherit a bogus partial-block count. */
     cbc->partialSz = 0;
+    cbc->finalReady = 0;
     XMEMSET(cbc->partial, 0, sizeof(cbc->partial));
+    XMEMSET(cbc->final, 0, sizeof(cbc->final));
 
     /* AES object on session. */
     ret = wc_AesInit(&cbc->aes, NULL, object->devId);
@@ -16139,12 +16144,14 @@ int WP11_AesCbcPad_DecryptFinal(unsigned char* dec, word32* decSz,
     unsigned char* p = dec;
     size_t mask;
 
-    ret = wc_AesCbcDecrypt(&cbc->aes, cbc->partial, cbc->partial,
-                                                                cbc->partialSz);
-    if (ret == 0) {
+    if (!cbc->finalReady) {
+        ret = wc_AesCbcDecrypt(&cbc->aes, cbc->final, cbc->partial,
+                               cbc->partialSz);
+    }
+    if (ret == 0 && !cbc->finalReady) {
         byte padBad;
 
-        padCnt = cbc->partial[AES_BLOCK_SIZE-1];
+        padCnt = cbc->final[AES_BLOCK_SIZE-1];
 
         /* Validate PKCS#7 padding in constant time:
          * padCnt must be 1..AES_BLOCK_SIZE and all padding bytes must equal
@@ -16155,13 +16162,17 @@ int WP11_AesCbcPad_DecryptFinal(unsigned char* dec, word32* decSz,
             /* inPad is 0xFF when i is in the padding region, 0x00 otherwise */
             byte inPad = (byte)(0 -
                 ((unsigned)(AES_BLOCK_SIZE - 1 - i) < (unsigned)padCnt));
-            padBad |= inPad & (cbc->partial[i] ^ padCnt);
+            padBad |= inPad & (cbc->final[i] ^ padCnt);
         }
         if (padBad) {
             ret = BAD_PADDING_E;
         }
+        else {
+            cbc->finalReady = 1;
+        }
     }
     if (ret == 0) {
+        padCnt = cbc->final[AES_BLOCK_SIZE-1];
         outSz = AES_BLOCK_SIZE - (padCnt & (0 - (padCnt <= AES_BLOCK_SIZE)));
         /* Refuse to overflow caller's buffer. Output size is 0..15 bytes;
          * caller passes the remaining capacity in *decSz. On a too-small
@@ -16177,14 +16188,16 @@ int WP11_AesCbcPad_DecryptFinal(unsigned char* dec, word32* decSz,
             mask = (size_t)0 - (i != outSz);
             p = (unsigned char*)((size_t)p & mask);
             p = (unsigned char*)((size_t)p | ((size_t)tmp & (~mask)));
-            *p = cbc->partial[i];
+            *p = cbc->final[i];
             p++;
         }
         *decSz = outSz;
     }
 
     wc_AesFree(&cbc->aes);
+    wc_ForceZero(cbc->final, sizeof(cbc->final));
     cbc->partialSz = 0;
+    cbc->finalReady = 0;
     session->init = 0;
 
     return ret;
