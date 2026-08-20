@@ -16979,6 +16979,11 @@ static CK_RV test_private_object_access(void* args)
     };
     CK_ULONG findTmplCnt = sizeof(findTmpl) / sizeof(*findTmpl);
     CK_OBJECT_HANDLE found;
+    CK_OBJECT_HANDLE soObj = CK_INVALID_HANDLE;
+    CK_ULONG valueLen = 0;
+    CK_ATTRIBUTE getTmpl = {
+        CKA_VALUE_LEN, &valueLen, sizeof(valueLen)
+    };
     CK_ULONG count;
 
     /* Create a private object while logged in (test setup logs us in) */
@@ -17010,7 +17015,46 @@ static CK_RV test_private_object_access(void* args)
     }
 
     if (ret == CKR_OK) {
-        /* Login as user */
+        ret = funcList->C_Login(session, CKU_SO, soPin, soPinLen);
+        CHECK_CKR(ret, "Login SO for private object test");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_FindObjectsInit(session, findTmpl, findTmplCnt);
+        CHECK_CKR(ret, "Find Objects Init - SO logged in");
+        if (ret == CKR_OK) {
+            ret = funcList->C_FindObjects(session, &found, 1, &count);
+            CHECK_CKR(ret, "Find Objects - SO logged in");
+        }
+        if (ret == CKR_OK && count != 0) {
+            ret = -1;
+            CHECK_CKR(ret, "SO must not discover private objects");
+        }
+        if (ret == CKR_OK) {
+            ret = funcList->C_FindObjectsFinal(session);
+            CHECK_CKR(ret, "Find Objects Final - SO logged in");
+        }
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_GetAttributeValue(session, obj, &getTmpl, 1);
+        CHECK_CKR_FAIL(ret, CKR_OBJECT_HANDLE_INVALID,
+                       "SO must not resolve private object handles");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_CreateObject(session, tmpl, tmplCnt, &soObj);
+        CHECK_CKR_FAIL(ret, CKR_USER_NOT_LOGGED_IN,
+                       "SO must not create private objects");
+    }
+
+    if (ret == CKR_OK) {
+        ret = funcList->C_Logout(session);
+        CHECK_CKR(ret, "Logout SO for private object test");
+    }
+
+    if (ret == CKR_OK) {
+        /* Login as user. */
         ret = funcList->C_Login(session, CKU_USER, userPin, userPinLen);
         CHECK_CKR(ret, "Login for private object test");
     }

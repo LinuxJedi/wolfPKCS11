@@ -8697,6 +8697,44 @@ int WP11_Slot_IsLoggedIn(WP11_Slot* slot)
             state != WP11_APP_STATE_RW_PUBLIC);
 }
 
+static int wp11_LoginStateIsUser(int state)
+{
+    return (state == WP11_APP_STATE_RO_USER ||
+            state == WP11_APP_STATE_RW_USER);
+}
+
+static int wp11_LoginStateCanAccessPrivate(int state)
+{
+#ifdef WOLFPKCS11_NSS
+    /* NSS uses wolfPKCS11 as its internal crypto module and accesses private
+     * objects from public sessions. This exception must not extend to SO
+     * sessions, which PKCS#11 does not authorize to use private objects. */
+    return wp11_LoginStateIsUser(state) ||
+           state == WP11_APP_STATE_RO_PUBLIC ||
+           state == WP11_APP_STATE_RW_PUBLIC;
+#else
+    return wp11_LoginStateIsUser(state);
+#endif
+}
+
+/**
+ * Check whether the normal user is logged in to the token.
+ *
+ * @param  slot  [in]  Slot object referencing token.
+ * @return  1 when the normal user is logged in.
+ *          0 when the session is public or the SO is logged in.
+ */
+int WP11_Slot_IsUserLoggedIn(WP11_Slot* slot)
+{
+    int state;
+
+    WP11_Lock_LockRO(&slot->lock);
+    state = slot->token.loginState;
+    WP11_Lock_UnlockRO(&slot->lock);
+
+    return wp11_LoginStateIsUser(state);
+}
+
 void WP11_Slot_Logout(WP11_Slot* slot)
 {
 #ifndef WOLFPKCS11_NO_STORE
@@ -10176,25 +10214,22 @@ static WP11_Object* wp11_Session_FindNext(WP11_Session* session, int onToken,
         }
    #endif
 
-#ifndef WOLFPKCS11_NSS
         /* F-3835: a public session must not discover CKA_PRIVATE objects.
          * An empty user PIN does not waive this - the caller can still
-         * authenticate with C_Login (empty PIN included). Skipped in NSS
-         * mode, which operates as the internal crypto module without calling
-         * C_Login and enumerates private keys (e.g. certutil) from a public
-         * session - matching the by-handle WP11_Object_Find check below. */
+         * authenticate with C_Login (empty PIN included). NSS operates as the
+         * internal crypto module without calling C_Login, so public sessions
+         * retain access in that mode while SO sessions remain excluded. */
         if ((ret->opFlag & WP11_FLAG_PRIVATE) == WP11_FLAG_PRIVATE) {
             if (!onToken)
                 WP11_Lock_LockRO(&session->slot->token.lock);
-            if (session->slot->token.loginState == WP11_APP_STATE_RW_PUBLIC ||
-                session->slot->token.loginState == WP11_APP_STATE_RO_PUBLIC) {
+            if (!wp11_LoginStateCanAccessPrivate(
+                    session->slot->token.loginState)) {
                 object = ret;
                 ret = NULL;
             }
             if (!onToken)
                 WP11_Lock_UnlockRO(&session->slot->token.lock);
         }
-#endif
     }
 
     return ret;
@@ -11460,23 +11495,21 @@ int WP11_Object_Find(WP11_Session* session, CK_OBJECT_HANDLE objHandle,
     }
 
     if (ret == 0 && obj != NULL && (obj->handle == objHandle)) {
-#ifndef WOLFPKCS11_NSS
         /* Enforce CKA_PRIVATE: reject private objects from public sessions.
-         * Skipped in NSS mode because NSS operates as the internal crypto
-         * module without calling C_Login. */
+         * NSS public sessions retain their internal-module exception, but SO
+         * sessions are never authorized to access private objects. */
         if ((obj->opFlag & WP11_FLAG_PRIVATE) == WP11_FLAG_PRIVATE) {
             int loginState;
             WP11_Lock_LockRO(&session->slot->lock);
             loginState = session->slot->token.loginState;
-            /* F-3835: resolving a CKA_PRIVATE object by handle from a public
-             * session must be denied even when the user PIN is empty. */
-            if (loginState == WP11_APP_STATE_RW_PUBLIC ||
-                loginState == WP11_APP_STATE_RO_PUBLIC) {
+            /* F-3835: resolving a CKA_PRIVATE object requires a normal-user
+             * login even when the user PIN is empty. An SO login grants no
+             * access to private objects. */
+            if (!wp11_LoginStateCanAccessPrivate(loginState)) {
                 ret = BAD_FUNC_ARG;
             }
             WP11_Lock_UnlockRO(&session->slot->lock);
         }
-#endif
         if (ret == 0)
             *object = obj;
     }

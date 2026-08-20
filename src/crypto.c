@@ -479,7 +479,7 @@ static CK_RV CheckPrivateLogin(WP11_Session* session,
         return CKR_OK;
     if (WP11_Slot_Has_Empty_Pin(slot))
         return CKR_OK;
-    if (!WP11_Slot_IsLoggedIn(slot))
+    if (!WP11_Slot_IsUserLoggedIn(slot))
         return CKR_USER_NOT_LOGGED_IN;
     return CKR_OK;
 }
