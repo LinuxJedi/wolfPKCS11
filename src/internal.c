@@ -2999,7 +2999,7 @@ static int wolfPKCS11_Store_TpmCommit(WP11_TpmStore* tpmStore)
  * @return  0 on success.
  * @return  Other value when written data could not be committed.
  */
-static int wolfPKCS11_Store_CloseCommit(void* store, int commit)
+int wolfPKCS11_Store_CloseCommit(void* store, int commit)
 {
     int ret = 0;
 #ifdef WOLFPKCS11_TPM_STORE
@@ -3289,11 +3289,19 @@ static void wp11_storage_close(void* storage)
  */
 static int wp11_storage_close_write(void* storage, int ret)
 {
-#ifdef WOLFPKCS11_CUSTOM_STORE
+#if defined(WOLFPKCS11_CUSTOM_STORE) && \
+    !defined(WOLFPKCS11_CUSTOM_STORE_CLOSE_COMMIT)
+    /* The store cannot report a failed commit. */
     wolfPKCS11_Store_Close(storage);
 #else
     int closeRet = wolfPKCS11_Store_CloseCommit(storage, ret == 0);
 
+#ifdef WOLFPKCS11_CUSTOM_STORE
+    /* Any failure means the data did not commit. A custom store's code could
+     * otherwise read as NOT_AVAILABLE_E, which means storage is turned off. */
+    if (closeRet != 0)
+        closeRet = BUFFER_E;
+#endif
     if (ret == 0)
         ret = closeRet;
 #endif
@@ -3425,8 +3433,9 @@ static int wp11_storage_write(void* storage, unsigned char* buffer, int len)
         /* All written successfully. */
         ret = 0;
     }
-    else if (ret == 0) {
-        /* Failed to write all data. */
+    else {
+        /* Failed to write all data. A custom store's failure code could
+         * otherwise read as another status, such as PIN_INVALID_E. */
         ret = BUFFER_E;
     }
 

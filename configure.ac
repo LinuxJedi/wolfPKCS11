@@ -664,6 +664,15 @@ AX_HARDEN_CC_COMPILER_FLAGS
 
 OPTION_FLAGS="$CFLAGS $CPPFLAGS $AM_CFLAGS"
 
+# The custom store tests build the library with WOLFPKCS11_CUSTOM_STORE. NSS
+# needs the file store, and a custom store cannot be built with the TPM store.
+AS_CASE([" $OPTION_FLAGS "],
+    [*" -DWOLFPKCS11_NSS "*|*" -DWOLFPKCS11_TPM_STORE "*],
+    [ENABLED_CUSTOM_STORE_TEST=no],
+    [ENABLED_CUSTOM_STORE_TEST=yes])
+AM_CONDITIONAL([BUILD_CUSTOM_STORE_TEST],
+    [test "x$ENABLED_CUSTOM_STORE_TEST" = "xyes"])
+
 AS_IF([test "x$WOLFPKCS11_STATIC_WOLFSSL" = "xyes"],
       [WOLFPKCS11_CONFIG_LIBS="$LIBS -lm"
        LIBS="$STATIC_WOLFSSL $LIBS -lm"],
