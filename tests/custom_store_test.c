@@ -22,8 +22,9 @@
  * and the test implements the store in memory. It is built twice:
  *  - custom_store_test, with WOLFPKCS11_CUSTOM_STORE_CLOSE_COMMIT, checks that
  *    a record whose commit fails, or whose write fails, fails the create, that
- *    a failed write closes the record with commit set to 0, and that the next
- *    store writes the records of every object again,
+ *    a failed write closes the record with commit set to 0, that a failed
+ *    commit fails a destroy, and that the next store writes the records of
+ *    every object again,
  *  - custom_store_legacy_test, without it, checks that a store implementing
  *    only wolfPKCS11_Store_Close() still builds and keeps token objects.
  * Both check that a record that fails to open for writing fails the create
@@ -389,6 +390,31 @@ static CK_RV create_obj(CK_SESSION_HANDLE session, const char* name)
         sizeof(tmpl) / sizeof(tmpl[0]), &obj);
 }
 
+#ifdef WOLFPKCS11_CUSTOM_STORE_CLOSE_COMMIT
+/* Destroy the token object with the name as label. */
+static CK_RV destroy_obj(CK_SESSION_HANDLE session, const char* name)
+{
+    CK_ATTRIBUTE tmpl[] = {
+        { CKA_TOKEN, &ckTrue,      sizeof(ckTrue) },
+        { CKA_LABEL, (void*)name,  strlen(name)   },
+    };
+    CK_OBJECT_HANDLE obj;
+    CK_ULONG cnt = 0;
+    CK_RV rv;
+
+    rv = funcList->C_FindObjectsInit(session, tmpl, 2);
+    if (rv == CKR_OK) {
+        rv = funcList->C_FindObjects(session, &obj, 1, &cnt);
+        (void)funcList->C_FindObjectsFinal(session);
+    }
+    if (rv == CKR_OK && cnt != 1)
+        rv = CKR_OBJECT_HANDLE_INVALID;
+    if (rv == CKR_OK)
+        rv = funcList->C_DestroyObject(session, obj);
+    return rv;
+}
+#endif
+
 /* Find the token object with the name as label, and check its value.
  * Returns the number found, or -1 on a wrong value. */
 static int find_obj(CK_SESSION_HANDLE session, const char* name)
@@ -439,7 +465,7 @@ static int custom_store_test(void)
     CK_RV rv;
     CK_SESSION_HANDLE session;
     /* Objects that exist at the end. */
-    const char* kept[] = { "objA", "objB", "objD", "objE", "objG" };
+    const char* kept[] = { "objA", "objB", "objD", "objG" };
     int keptCnt;
     int commits;
     int discards = 0;
@@ -508,6 +534,14 @@ static int custom_store_test(void)
 
     CHECK(find_obj(session, "objC") == 0, "Failed create not added");
     CHECK(find_obj(session, "objF") == 0, "Failed create not added");
+
+    /* A destroy whose commit fails reports it. The object is gone, and the
+     * token is written in full when finalized. */
+    failCommitAt = commitCnt;
+    rv = destroy_obj(session, "objE");
+    failCommitAt = -1;
+    CHECK(rv == CKR_FUNCTION_FAILED, "Failed commit fails the destroy");
+    CHECK(find_obj(session, "objE") == 0, "Destroyed object removed");
 #endif
     /* Records written without a failure are closed with commit of 1. */
     CHECK(discardCnt == discards, "No other record discarded");
