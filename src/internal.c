@@ -3220,6 +3220,24 @@ int wolfPKCS11_Store_Write(void* store, unsigned char* buffer, int len)
 }
 #endif
 
+#ifdef WOLFPKCS11_CUSTOM_STORE
+/*
+ * Maps a custom store's failure to open to BUFFER_E.
+ * The store's own code could otherwise read as another status, such as
+ * PIN_INVALID_E. NOT_AVAILABLE_E is kept: the data is not stored.
+ *
+ * @param [in]  ret  Result of opening.
+ * @return  0 or NOT_AVAILABLE_E as passed in.
+ * @return  BUFFER_E for any other failure.
+ */
+static int wp11_storage_open_ret(int ret)
+{
+    if (ret != 0 && ret != NOT_AVAILABLE_E)
+        ret = BUFFER_E;
+    return ret;
+}
+#endif
+
 /*
  * Opens access to location to read token data.
  *
@@ -3236,7 +3254,12 @@ int wolfPKCS11_Store_Write(void* store, unsigned char* buffer, int len)
 static int wp11_storage_open_readonly(int type, CK_ULONG id1, CK_ULONG id2,
                               void** storage)
 {
-    return wolfPKCS11_Store_Open(type, id1, id2, 1, storage);
+    int ret = wolfPKCS11_Store_Open(type, id1, id2, 1, storage);
+
+#ifdef WOLFPKCS11_CUSTOM_STORE
+    ret = wp11_storage_open_ret(ret);
+#endif
+    return ret;
 }
 
 /*
@@ -3257,8 +3280,14 @@ static int wp11_storage_open(int type, CK_ULONG id1, CK_ULONG id2,
 #ifdef WOLFPKCS11_TPM_STORE
     return wolfPKCS11_Store_OpenSz(type, id1, id2, 0, variableSz, storage);
 #else
+    int ret;
+
     (void)variableSz; /* not used */
-    return wolfPKCS11_Store_Open(type, id1, id2, 0, storage);
+    ret = wolfPKCS11_Store_Open(type, id1, id2, 0, storage);
+#ifdef WOLFPKCS11_CUSTOM_STORE
+    ret = wp11_storage_open_ret(ret);
+#endif
+    return ret;
 #endif
 }
 
@@ -3359,6 +3388,13 @@ static int wp11_storage_read(void* storage, unsigned char* buffer, int len)
         /* Failed to read all data. */
         ret = BUFFER_E;
     }
+#ifdef WOLFPKCS11_CUSTOM_STORE
+    else {
+        /* A custom store's failure code could otherwise read as another
+         * status, such as PIN_INVALID_E. */
+        ret = BUFFER_E;
+    }
+#endif
 
     return ret;
 }

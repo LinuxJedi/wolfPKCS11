@@ -26,6 +26,8 @@
  *    store writes the records of every object again,
  *  - custom_store_legacy_test, without it, checks that a store implementing
  *    only wolfPKCS11_Store_Close() still builds and keeps token objects.
+ * Both check that a record that fails to open for writing fails the create
+ * with CKR_FUNCTION_FAILED, whatever code the store returns.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -48,7 +50,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if !defined(WOLFPKCS11_NO_STORE) && !defined(WOLFPKCS11_TPM_STORE)
+/* The library turns storage off without AES (wolfpkcs11/internal.h). */
+#if !defined(WOLFPKCS11_NO_STORE) && !defined(WOLFPKCS11_TPM_STORE) && \
+    !defined(NO_AES)
 #define RUN_TEST
 #endif
 
@@ -84,9 +88,11 @@ typedef struct StoreHandle {
 
 static StoreRecord records[STORE_RECORDS];
 static int commitCnt;           /* Commits tried */
+static int openCnt;             /* Opens for writing tried */
 static int writeCnt;            /* Writes tried */
 static int discardCnt;          /* Written records closed without commit */
 static int failCommitAt = -1;   /* Commit to fail, counted by commitCnt */
+static int failOpenAt = -1;     /* Open to fail, counted by openCnt */
 static int failWriteAt = -1;    /* Write to fail, counted by writeCnt */
 
 static StoreRecord* store_find(int type, CK_ULONG id1, CK_ULONG id2)
@@ -161,6 +167,8 @@ int wolfPKCS11_Store_Open(int type, CK_ULONG id1, CK_ULONG id2, int read,
     *store = NULL;
     if (read && rec == NULL)
         return NOT_AVAILABLE_E;
+    if (!read && openCnt++ == failOpenAt)
+        return STORE_FAIL_E;
     handle = (StoreHandle*)calloc(1, sizeof(*handle));
     if (handle == NULL)
         return STORE_FAIL_E;
@@ -432,6 +440,13 @@ static int custom_store_test(void)
     CHECK_RV(rv, "Create objB");
     CHECK(object_commits(0) == commits, "Create leaves objA's records");
     keptCnt = 2;
+
+    /* objX's first record does not open for writing, so the create fails. */
+    failOpenAt = openCnt;
+    rv = create_obj(session, "objX");
+    failOpenAt = -1;
+    CHECK(rv == CKR_FUNCTION_FAILED, "Failed open fails the create");
+    CHECK(find_obj(session, "objX") == 0, "Failed create not added");
 
 #ifdef WOLFPKCS11_CUSTOM_STORE_CLOSE_COMMIT
     /* The first record of objC does not commit, so the create fails. */
