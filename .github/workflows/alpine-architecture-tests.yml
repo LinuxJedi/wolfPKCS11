@@ -2,7 +2,7 @@ name: wolfPKCS11 Alpine Architecture Tests
 
 on:
   push:
-    branches: [ 'master', 'main' ]
+    branches: [ 'master', 'main', 'ci-alpine-apk-tools-mirror-test' ]
   pull_request:
     branches: [ '*' ]
 
