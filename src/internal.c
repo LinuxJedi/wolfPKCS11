@@ -5052,7 +5052,9 @@ static int wp11_Object_Load_Data(WP11_Object* object, int tokenId, int objId)
             object->data.genericData.objectIdLen = (word32)tempLen;
     }
 
-    wp11_storage_close(storage);
+    /* Nothing to close when the open failed. */
+    if (storage != NULL)
+        wp11_storage_close(storage);
 
     return ret;
 }
@@ -5622,7 +5624,9 @@ static int wp11_Object_Store_Data(WP11_Object* object, int tokenId, int objId)
             object->data.genericData.objectIdLen);
     }
 
-    ret = wp11_storage_close_write(storage, ret);
+    /* Nothing to close when the open failed. */
+    if (storage != NULL)
+        ret = wp11_storage_close_write(storage, ret);
 
     return ret;
 }

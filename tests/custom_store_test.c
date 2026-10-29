@@ -27,7 +27,8 @@
  *  - custom_store_legacy_test, without it, checks that a store implementing
  *    only wolfPKCS11_Store_Close() still builds and keeps token objects.
  * Both check that a record that fails to open for writing fails the create
- * with CKR_FUNCTION_FAILED, whatever code the store returns.
+ * with CKR_FUNCTION_FAILED, whatever code the store returns, and that a record
+ * that fails to open, for writing or reading, is not closed.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -91,6 +92,7 @@ static int commitCnt;           /* Commits tried */
 static int openCnt;             /* Opens for writing tried */
 static int writeCnt;            /* Writes tried */
 static int discardCnt;          /* Written records closed without commit */
+static int nullCloseCnt;        /* Closes of a store that was not opened */
 static int failCommitAt = -1;   /* Commit to fail, counted by commitCnt */
 static int failOpenAt = -1;     /* Open to fail, counted by openCnt */
 static int failWriteAt = -1;    /* Write to fail, counted by writeCnt */
@@ -139,8 +141,10 @@ static int store_close(void* store, int commit)
     StoreHandle* handle = (StoreHandle*)store;
     int ret = 0;
 
-    if (handle == NULL)
+    if (handle == NULL) {
+        nullCloseCnt++;
         return 0;
+    }
     if (!handle->read) {
         if (!commit) {
             discardCnt++;
@@ -280,6 +284,23 @@ static void store_free(void)
     for (i = 0; i < STORE_RECORDS; i++)
         free(records[i].data);
     XMEMSET(records, 0, sizeof(records));
+}
+
+/* Remove the record of the given type for the object with the given store id.
+ * Returns 1 when removed. */
+static int store_drop(int type, CK_ULONG id)
+{
+    int i;
+
+    for (i = 0; i < STORE_RECORDS; i++) {
+        if (records[i].used && records[i].type == type &&
+                records[i].id2 == id) {
+            free(records[i].data);
+            XMEMSET(&records[i], 0, sizeof(records[i]));
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* Commits of the records of the object with the given store id. */
@@ -448,6 +469,14 @@ static int custom_store_test(void)
     CHECK(rv == CKR_FUNCTION_FAILED, "Failed open fails the create");
     CHECK(find_obj(session, "objX") == 0, "Failed create not added");
 
+    /* objY's object record is written, then its data record does not open. */
+    failOpenAt = openCnt + 1;
+    rv = create_obj(session, "objY");
+    failOpenAt = -1;
+    CHECK(rv == CKR_FUNCTION_FAILED, "Failed open fails the create");
+    CHECK(find_obj(session, "objY") == 0, "Failed create not added");
+    CHECK(nullCloseCnt == 0, "Record that did not open not closed");
+
 #ifdef WOLFPKCS11_CUSTOM_STORE_CLOSE_COMMIT
     /* The first record of objC does not commit, so the create fails. */
     failCommitAt = commitCnt;
@@ -498,6 +527,14 @@ static int custom_store_test(void)
     (void)funcList->C_Logout(session);
     (void)funcList->C_CloseSession(session);
     (void)funcList->C_Finalize(NULL);
+
+    /* A data record that is missing does not open for reading. Loading the
+     * token fails, and the record is not closed. */
+    CHECK(store_drop(WOLFPKCS11_STORE_DATA, 0), "Data record removed");
+    rv = pkcs11_init();
+    if (rv == CKR_OK)
+        (void)funcList->C_Finalize(NULL);
+    CHECK(nullCloseCnt == 0, "Record that did not open not closed");
 
     return 0;
 }
